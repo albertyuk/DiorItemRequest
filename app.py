@@ -20,6 +20,7 @@ from flask import (
 from werkzeug.exceptions import RequestEntityTooLarge
 
 import pipeline
+import sku_locator
 from translations import STRINGS, SUPPORTED_LANGS
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -44,9 +45,14 @@ def report_to_dict(report: "pipeline.RunReport", map_filename: str) -> dict:
                 "bases": sorted(s.bases),
                 "highlighted_cell_details": s.highlighted_cell_details,
                 "other_fills": s.other_fills,
+                "ai_sku_cells": s.ai_sku_cells,
+                "ai_highlighted_cell_details": s.ai_highlighted_cell_details,
             }
             for s in report.sheets
         ],
+        "ai_enabled": report.ai_enabled,
+        "ai_detection": report.ai_detection,
+        "ai_note": report.ai_note,
         "bases": report.bases,
         "base_skus": report.base_skus,
         "matched_counts": report.matched_counts,
@@ -204,9 +210,11 @@ def create_app(data_dir: Path | str | None = None,
         # sharing an output path and serving each other's workbooks.
         run_id = f"{run_at.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
         out_path = outputs_dir / f"ProductsList_{run_id}.xlsx"
+        locator = sku_locator.locate if sku_locator.is_configured() else None
         try:
             report = pipeline.run_pipeline(
-                map_tmp, stored_query, template_path, out_path)
+                map_tmp, stored_query, template_path, out_path,
+                locator=locator)
         except Exception as exc:
             # Malformed maps fail in many shapes (BadZipFile, XML
             # ParseError, KeyError, ...) — all must land on the friendly

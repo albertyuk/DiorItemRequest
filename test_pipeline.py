@@ -17,6 +17,7 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Color, PatternFill
 
 import pipeline
+import sku_locator
 from app import create_app
 
 SAMPLES = Path(__file__).parent / "samples"
@@ -143,6 +144,135 @@ def test_base_extraction_double_x():
     assert re.sub(r"X[0-9A-Z]{4}$", "", "652P92X3F74X8090") == "652P92X3F74"
     assert pipeline.extract_base("644S83A7A26X5883") == "644S83A7A26"
     assert pipeline.extract_base("  644S83A7A26X5883 ") == "644S83A7A26"
+    # underscore-separated color codes (delivery-tracker style)
+    assert pipeline.extract_base("641V19A1491_X8300") == "641V19A1491"
+    # no recognizable color block -> base is the SKU itself
+    assert pipeline.extract_base("KCK554TFS_S03W") == "KCK554TFS_S03W"
+
+
+# --- 2b. AI-located SKU columns ---------------------------------------------
+
+def _track_workbook(path):
+    """Delivery-tracker-style sheet: SKUs under a 'SKU' header in a format
+    the strict regex cannot recognize."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Track"
+    ws.append(["SKU", "QTY"])
+    c = ws.cell(row=2, column=1, value="M0715OUQO_M900_TU")
+    c.fill = _yellow()
+    ws.cell(row=3, column=1, value="KCV536VCR_S900_T37")
+    c = ws.cell(row=4, column=1, value="1222")  # numeric — not a SKU
+    c.fill = _yellow()
+    ws.cell(row=5, column=1, value="641V19A1491_X8300").fill = _yellow()
+    wb.save(path)
+
+
+def test_ai_columns_extend_scan(tmp_path):
+    path = tmp_path / "track.xlsx"
+    _track_workbook(path)
+
+    # without AI columns the strict regex finds nothing here
+    plain = pipeline.scan_sell_thru_map(path).sheets[0]
+    assert plain.sku_cells == 0 and plain.highlighted_cells == 0
+
+    ai_columns = {"Track": {"header_row": 1, "columns": {"A": "SKU"}}}
+    scan = pipeline.scan_sell_thru_map(path, ai_columns=ai_columns).sheets[0]
+    assert scan.ai_sku_cells == 3          # '1222' filtered as implausible
+    assert scan.highlighted_cells == 2     # M0715... and 641V19...
+    assert ("A2", "M0715OUQO_M900_TU", "M0715OUQO_M900_TU") \
+        in scan.ai_highlighted_cell_details
+    # underscore color code is stripped for the base
+    assert ("A5", "641V19A1491_X8300", "641V19A1491") \
+        in scan.ai_highlighted_cell_details
+    # the header cell itself is never extracted
+    assert all(coord != "A1" for coord, _, _ in scan.ai_highlighted_cell_details)
+
+
+def test_pipeline_with_fake_locator(tmp_path):
+    map_path = tmp_path / "map.xlsx"
+    _track_workbook(map_path)
+    qwb = Workbook()
+    qws = qwb.active
+    qws.title = "query"
+    qws.append(pipeline.QUERY_HEADERS)
+    qws.append(["3617000000001", "641V19A1491 - X8300 - T36", "d", "dep",
+                "s", None, None, None, 1, 10, 20, "t", "p"])
+    query_path = tmp_path / "q.xlsx"
+    qwb.save(query_path)
+
+    detection = [{"sheet": "Track", "header_row": 1,
+                  "sku_columns": [{"column": "A", "header": "SKU",
+                                   "reason": "data cells hold item codes"}]}]
+    report = pipeline.run_pipeline(
+        map_path, query_path,
+        Path(__file__).parent / "assets" / "ProductsListTemplate.xlsx",
+        tmp_path / "out.xlsx",
+        locator=lambda p: detection,
+    )
+    assert report.ai_enabled and report.ai_detection == detection
+    assert report.ai_note is None
+    # 641V19A1491 matched the query; the underscore code did not
+    assert report.matched_counts == {"641V19A1491": 1}
+    assert "M0715OUQO_M900_TU" in report.unmatched
+    assert report.rows_written == 1
+
+
+def test_pipeline_survives_locator_failure(tmp_path):
+    map_path = tmp_path / "map.xlsx"
+    _track_workbook(map_path)
+    qwb = Workbook()
+    qws = qwb.active
+    qws.title = "query"
+    qws.append(pipeline.QUERY_HEADERS)
+    query_path = tmp_path / "q.xlsx"
+    qwb.save(query_path)
+
+    def broken(_path):
+        raise RuntimeError("api unreachable")
+
+    report = pipeline.run_pipeline(
+        map_path, query_path,
+        Path(__file__).parent / "assets" / "ProductsListTemplate.xlsx",
+        tmp_path / "out.xlsx",
+        locator=broken,
+    )
+    assert report.ai_enabled
+    assert report.ai_note == "api unreachable"
+    assert report.rows_written == 0  # run completed regardless
+
+
+def test_locator_previews_and_normalization(tmp_path):
+    path = tmp_path / "track.xlsx"
+    _track_workbook(path)
+    previews = sku_locator.build_previews(path)
+    assert previews[0]["sheet"] == "Track"
+    assert previews[0]["rows"]["1"]["A"] == "SKU"
+    assert previews[0]["rows"]["2"]["A"] == "M0715OUQO_M900_TU"
+
+    raw = [
+        {"sheet": "Track", "header_row": 1,
+         "sku_columns": [{"column": "a", "header": "SKU", "reason": "ok"},
+                         {"column": "5", "header": None, "reason": "bad"}]},
+        {"sheet": "Ghost", "header_row": 1, "sku_columns": []},
+    ]
+    normalized = sku_locator._normalize(raw, ["Track"])
+    assert normalized == [{"sheet": "Track", "header_row": 1,
+                           "sku_columns": [{"column": "A", "header": "SKU",
+                                            "reason": "ok"}]}]
+
+
+@pytest.mark.skipif(
+    not sku_locator.is_configured()
+    or not (SAMPLES / "delivery_track.xlsx").exists(),
+    reason="needs ANTHROPIC_API_KEY and samples/delivery_track.xlsx",
+)
+def test_locator_live_on_delivery_track():
+    detection = sku_locator.locate(SAMPLES / "delivery_track.xlsx")
+    by_sheet = {d["sheet"]: [c["column"] for c in d["sku_columns"]]
+                for d in detection}
+    assert "E" in by_sheet.get("All Cat", [])   # 'TS SKU' column
+    assert "A" in by_sheet.get("Sheet2", [])    # 'SKU' column
 
 
 # --- 3. query matching ------------------------------------------------------
@@ -245,6 +375,8 @@ def test_end_to_end_upload_and_download(tmp_path):
     # the report must trace internal steps: highlighted cells found, base
     # extraction, and the query data pulled per base
     assert "Processing steps" in html
+    # without an API key configured, the AI section says it is off
+    assert "AI column detection" in html
     cell_trace = re.search(
         r"<td>([A-Z]{1,3}\d+)</td><td>([0-9A-Z]{8,})</td><td>([0-9A-Z]{8,})</td>",
         html.replace("\n", ""))

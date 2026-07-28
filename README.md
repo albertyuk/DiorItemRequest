@@ -30,6 +30,30 @@ filled **ProductsList** workbook for download.
   what the tool does, a first-run walkthrough, how to read the report, and
   the common gotchas (pale theme-yellow highlights, filter-hidden rows).
 
+## AI SKU-column detection (optional)
+
+Workbooks other than the standard sell-thru map (delivery trackers,
+transfer logs) carry SKUs in formats the pattern scanner cannot recognize —
+accessory MMCs like `M0759OWKAM912` or underscore codes like
+`641V19A1491_X8300` — under headers such as `TS SKU`, `SKU`, or
+`Row Labels`. With an Anthropic API key configured, each run sends a small
+preview of every sheet (first ~12 rows, values truncated — never the whole
+workbook) to Claude, which returns the header row and SKU column(s) per
+sheet. Highlighted cells in those columns are then extracted too, and the
+run report shows what was detected and why (`sku_locator.py`).
+
+```bash
+fly secrets set ANTHROPIC_API_KEY=sk-ant-...   # or export it locally
+```
+
+- Without the key the feature is off and the app behaves exactly as before;
+  the report says so.
+- Model defaults to `claude-opus-5` (override with `ANTHROPIC_MODEL`).
+  Server-side refusal fallback is enabled, so a safety-classifier decline
+  re-runs on Anthropic's recommended substitute model automatically.
+- One API call per run on a ~1 KB preview — cost is a fraction of a cent;
+  detection failures (rate limit, network) never fail the run.
+
 ## Local run
 
 ```bash

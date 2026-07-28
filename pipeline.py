@@ -31,9 +31,23 @@ STRUCTURAL_THEMES = {4}
 # SKU-shaped strings: 8+ alphanumerics, an X, then a 3+ alphanumeric suffix.
 # Covers FW26 parent rows (X + 4-char color) and LOOK TOTAL variants.
 SKU_RE = re.compile(r"^[0-9A-Z]{8,}X[0-9A-Z]{3,}$")
-# The color block is always the *trailing* X + 4 alphanumerics. Never use
-# split('X'): bases themselves may contain an X (652P92X3F74X8090).
-COLOR_SUFFIX_RE = re.compile(r"X[0-9A-Z]{4}$")
+# The color block is always the *trailing* X + 4 alphanumerics (optionally
+# separated, as in 641V19A1491_X8300). Never use split('X'): bases
+# themselves may contain an X (652P92X3F74X8090).
+COLOR_SUFFIX_RE = re.compile(r"[_\- ]?X[0-9A-Z]{4}$")
+
+# Looser shape for values in AI-located SKU columns: codes the strict regex
+# cannot recognize (accessory MMCs like M0759OWKAM912, underscore codes like
+# KCK554TFS_S03W). Must contain both a letter and a digit.
+LOOSE_SKU_RE = re.compile(r"^[0-9A-Za-z][0-9A-Za-z_\-./ ]{4,39}$")
+
+
+def _plausible_sku(value: str) -> bool:
+    if value.startswith("=") or not LOOSE_SKU_RE.match(value):
+        return False
+    return (any(ch.isdigit() for ch in value)
+            and any(ch.isalpha() for ch in value)
+            and value.count(" ") <= 1)
 
 QUERY_SHEET = "query"
 QUERY_HEADERS = [
@@ -109,6 +123,9 @@ class SheetScan:
     # step-by-step trace for the report page: (cell coordinate, sku, base)
     highlighted_cell_details: list[tuple[str, str, str]] = field(default_factory=list)
     other_fills: list[tuple[str, str, str]] = field(default_factory=list)  # (coord, sku, note)
+    # cells found only through AI-located SKU columns (non-standard formats)
+    ai_sku_cells: int = 0
+    ai_highlighted_cell_details: list[tuple[str, str, str]] = field(default_factory=list)
 
     @property
     def bases(self) -> set[str]:
@@ -137,34 +154,55 @@ class MapScan:
         ]
 
 
-def scan_sell_thru_map(path) -> MapScan:
+def scan_sell_thru_map(path, ai_columns: dict | None = None) -> MapScan:
     """Scan every cell of every sheet for SKU-shaped strings and classify
     their fills. Geometry-free on purpose: it handles both the FW26 row
-    layout and the LOOK TOTAL block layout without hardcoded columns."""
+    layout and the LOOK TOTAL block layout without hardcoded columns.
+
+    ai_columns (optional) extends the scan with AI-located SKU columns:
+    {sheet name: {"header_row": int | None, "columns": {letter: header}}}.
+    In those columns, plausible SKU codes that the strict regex cannot
+    recognize are also extracted (below the header row only).
+    """
+    ai_columns = ai_columns or {}
     wb = load_workbook(path, read_only=True)
     try:
         sheets = []
         for ws in wb.worksheets:
             scan = SheetScan(name=ws.title)
+            sheet_ai = ai_columns.get(ws.title) or {}
+            ai_cols = sheet_ai.get("columns") or {}
+            ai_min_row = (sheet_ai.get("header_row") or 0) + 1
             for row in ws.iter_rows():
                 for cell in row:
                     value = cell.value
                     if not isinstance(value, str):
                         continue
                     sku = value.strip()
-                    if not SKU_RE.match(sku):
-                        continue
-                    scan.sku_cells += 1
-                    if is_highlighted(cell):
-                        scan.highlighted_cells += 1
-                        scan.highlighted_skus.add(sku)
-                        if len(scan.highlighted_cell_details) < MAX_HIGHLIGHT_DETAILS:
-                            scan.highlighted_cell_details.append(
-                                (cell.coordinate, sku, extract_base(sku)))
-                    elif len(scan.other_fills) < MAX_OTHER_FILLS:
-                        note = _fill_note(cell)
-                        if note:
-                            scan.other_fills.append((cell.coordinate, sku, note))
+                    if SKU_RE.match(sku):
+                        scan.sku_cells += 1
+                        if is_highlighted(cell):
+                            scan.highlighted_cells += 1
+                            scan.highlighted_skus.add(sku)
+                            if len(scan.highlighted_cell_details) < MAX_HIGHLIGHT_DETAILS:
+                                scan.highlighted_cell_details.append(
+                                    (cell.coordinate, sku, extract_base(sku)))
+                        elif len(scan.other_fills) < MAX_OTHER_FILLS:
+                            note = _fill_note(cell)
+                            if note:
+                                scan.other_fills.append(
+                                    (cell.coordinate, sku, note))
+                    elif (ai_cols and cell.row >= ai_min_row
+                          and cell.column_letter in ai_cols
+                          and _plausible_sku(sku)):
+                        scan.sku_cells += 1
+                        scan.ai_sku_cells += 1
+                        if is_highlighted(cell):
+                            scan.highlighted_cells += 1
+                            scan.highlighted_skus.add(sku)
+                            if len(scan.ai_highlighted_cell_details) < MAX_HIGHLIGHT_DETAILS:
+                                scan.ai_highlighted_cell_details.append(
+                                    (cell.coordinate, sku, extract_base(sku)))
             sheets.append(scan)
         return MapScan(sheets=sheets)
     finally:
@@ -322,6 +360,22 @@ class RunReport:
     unmatched: list[str]
     other_fills: list[tuple[str, str, str, str]]
     rows_written: int
+    ai_enabled: bool = False             # was an AI column locator supplied?
+    ai_detection: list | None = None     # locator output per sheet
+    ai_note: str | None = None           # why detection is missing/failed
+
+
+def build_ai_columns(detection) -> dict:
+    """Reshape locator output for scan_sell_thru_map's ai_columns input."""
+    out = {}
+    for entry in detection or []:
+        columns = {c["column"]: c.get("header") for c in entry["sku_columns"]}
+        if columns:
+            out[entry["sheet"]] = {
+                "header_row": entry.get("header_row"),
+                "columns": columns,
+            }
+    return out
 
 
 def _trace_rows(rows) -> list[dict]:
@@ -336,8 +390,20 @@ def _trace_rows(rows) -> list[dict]:
     return out
 
 
-def run_pipeline(map_path, query_path, template_path, out_path) -> RunReport:
-    scan = scan_sell_thru_map(map_path)
+def run_pipeline(map_path, query_path, template_path, out_path,
+                 locator=None) -> RunReport:
+    """locator (optional): callable(map_path) -> detection list, as returned
+    by sku_locator.locate. Any locator failure is reported, never fatal."""
+    ai_detection = None
+    ai_note = None
+    if locator is not None:
+        try:
+            ai_detection = locator(map_path)
+        except Exception as exc:
+            log.warning("SKU column detection unavailable: %s", exc)
+            ai_note = str(exc)
+    scan = scan_sell_thru_map(map_path,
+                              ai_columns=build_ai_columns(ai_detection))
     bases = scan.bases
     matched = match_query(query_path, bases)
     unmatched = sorted(set(bases) - set(matched))
@@ -357,6 +423,9 @@ def run_pipeline(map_path, query_path, template_path, out_path) -> RunReport:
         unmatched=unmatched,
         other_fills=scan.other_fills,
         rows_written=rows_written,
+        ai_enabled=locator is not None,
+        ai_detection=ai_detection,
+        ai_note=ai_note,
     )
     log.info(
         "run: sheets=%s bases=%d matched=%d unmatched=%d rows=%d other_fills=%d",

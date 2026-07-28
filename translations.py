@@ -56,6 +56,21 @@ STRINGS = {
         "th_unique_skus": "Unique SKUs", "th_unique_bases": "Unique bases",
         "th_cell": "Cell", "th_sku_as_highlighted": "SKU (as highlighted)",
         "th_base_extracted": "Base extracted",
+        "ai_heading": "AI column detection",
+        "ai_desc": ("Claude reads each sheet's header area and points at the "
+                    "column(s) holding SKU codes, so highlighted SKUs in "
+                    "non-standard formats (accessory MMCs, underscore codes) "
+                    "are extracted too — not only the standard pattern."),
+        "ai_th_header_row": "Header row", "ai_th_column": "SKU column",
+        "ai_th_header": "Header", "ai_th_reason": "Why",
+        "ai_found_cells": ("{sheet} — {n} highlighted cells found only via "
+                           "AI-located columns"),
+        "ai_none": ("The AI reviewed the sheet headers and found no SKU "
+                    "columns beyond what the standard scan already covers."),
+        "ai_failed": ("AI column detection was unavailable this run: "
+                      "{detail}. The standard scan still ran in full."),
+        "ai_off": ("AI column detection is off — set the ANTHROPIC_API_KEY "
+                   "secret to enable it. The standard scan ran in full."),
         "step2_title": "Step 2 — extract base SKUs",
         "step2_desc": ("The trailing color block (<code>X</code> + 4 "
                        "characters) is stripped from each highlighted SKU; "
@@ -161,6 +176,17 @@ STRINGS = {
         "th_unique_skus": "去重后 SKU 数", "th_unique_bases": "去重后基础款号数",
         "th_cell": "单元格", "th_sku_as_highlighted": "标黄的 SKU",
         "th_base_extracted": "提取出的基础款号",
+        "ai_heading": "AI 识别 SKU 列",
+        "ai_desc": ("Claude 会阅读每个工作表的表头区域，判断哪些列存放 SKU 编码。"
+                    "这样即使 SKU 格式不标准（如配饰 MMC、下划线编码），"
+                    "标黄的也能被提取，不再局限于标准格式。"),
+        "ai_th_header_row": "表头行", "ai_th_column": "SKU 列",
+        "ai_th_header": "表头", "ai_th_reason": "判断依据",
+        "ai_found_cells": "{sheet}：{n} 个标黄单元格仅通过 AI 识别的列找到（点击查看）",
+        "ai_none": "AI 检查了各工作表的表头，没有发现标准扫描之外的 SKU 列。",
+        "ai_failed": "本次运行 AI 识别不可用：{detail}。标准扫描已正常完成。",
+        "ai_off": ("AI 识别功能未开启 — 配置 ANTHROPIC_API_KEY 密钥即可启用。"
+                   "标准扫描已正常完成。"),
         "step2_title": "第 2 步：提取基础款号",
         "step2_desc": ("每个标黄 SKU 去掉末尾的颜色码（<code>X</code> + 4 位）"
                        "就是基础款号，去重后共 <strong>{n}</strong> 个。"),
