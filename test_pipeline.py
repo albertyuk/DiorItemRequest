@@ -377,6 +377,29 @@ def test_language_toggle_and_cookie(tmp_path):
     assert "每次运行都必须上传" in resp.data.decode()
 
 
+def test_help_page_in_both_languages(tmp_path):
+    app = create_app(data_dir=tmp_path, password="")
+    client = app.test_client()
+
+    # linked from the front page
+    assert b"/help" in client.get("/").data
+
+    en = client.get("/help").data.decode()
+    assert en.count("<h2>") >= 5
+    assert "What this tool does" in en
+    assert "Your first run, step by step" in en
+    assert "filter" in en  # covers the hidden-rows gotcha
+
+    zh = client.get("/help?lang=zh").data.decode()
+    assert "这个工具是做什么的" in zh
+    assert "第一次使用" in zh
+    assert "筛选" in zh
+
+    # help is behind auth like everything else
+    locked = create_app(data_dir=tmp_path / "locked", password="pw")
+    assert locked.test_client().get("/help").status_code == 401
+
+
 def test_basic_auth_handles_non_ascii_passwords(tmp_path):
     """compare_digest on str raises TypeError for non-ASCII — a login typo
     must yield 401 and a non-ASCII APP_PASSWORD must still work, never 500."""

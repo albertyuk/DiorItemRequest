@@ -166,6 +166,10 @@ def create_app(data_dir: Path | str | None = None,
     def index():
         return render_template("index.html", query_meta=read_query_meta())
 
+    @app.get("/help")
+    def help_page():
+        return render_template("help.html")
+
     @app.post("/process")
     def process():
         map_file = request.files.get("map_file")

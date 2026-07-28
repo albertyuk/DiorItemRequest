@@ -26,6 +26,9 @@ filled **ProductsList** workbook for download.
   JSON next to their output (`/report/<run_id>`), so they survive refresh
   and can be re-read later in either language; they are pruned together
   with their workbook (last 10 kept).
+- A bilingual user tutorial lives at `/help` (linked from the front page):
+  what the tool does, a first-run walkthrough, how to read the report, and
+  the common gotchas (pale theme-yellow highlights, filter-hidden rows).
 
 ## Local run
 

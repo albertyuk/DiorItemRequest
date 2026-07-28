@@ -18,6 +18,8 @@ STRINGS = {
         "page_upload": "upload",
         "page_report": "run report",
         "page_error": "error",
+        "page_help": "tutorial",
+        "help_link": "New here? Read the tutorial →",
         "lang_switch": "中文",
 
         # index
@@ -123,6 +125,8 @@ STRINGS = {
         "page_upload": "上传",
         "page_report": "运行报告",
         "page_error": "错误",
+        "page_help": "使用教程",
+        "help_link": "第一次使用？请看使用教程 →",
         "lang_switch": "English",
 
         # index

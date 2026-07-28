@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+{% block title %}{{ t('page_help') }}{% endblock %}
+{% block content %}
+<style>
+  .sw { display: inline-block; width: 1.1rem; height: 1.1rem;
+        border: 1px solid #999; border-radius: 3px; vertical-align: -0.2rem; }
+  ol.tut li { margin: .45rem 0; }
+</style>
+<p><a href="{{ url_for('index') }}">{{ t('back_to_upload') | safe }}</a></p>
+
+{% if lang == 'zh' %}
+
+  <h2>这个工具是做什么的？</h2>
+  <p>每季 Dior 发来的 Sell-Thru Map（销售进度表）里，需要补货（REORDER）的款式会
+  被<strong>标黄</strong>——表内 E1 单元格的备注就是这么说明的：
+  “标黄款式后续有REORDER补货”。本工具把这件原本要手工完成的事自动化：</p>
+  <ol class="tut">
+    <li>扫描 Sell-Thru Map 的<strong>所有工作表</strong>，找出每一个标黄的 SKU；</li>
+    <li>去掉 SKU 末尾的颜色码（<code>X</code> + 4 位），得到<strong>基础款号</strong>
+        （例如 <code>644S16B7E72X5805</code> → <code>644S16B7E72</code>）；</li>
+    <li>在已存储的<strong>库存查询表</strong>中找出这些款号的
+        <strong>全部颜色和尺码</strong>；</li>
+    <li>生成一份填写完整、可直接使用的 <strong>ProductsList 工作簿</strong>供下载。</li>
+  </ol>
+
+  <h2>开始前需要准备什么？</h2>
+  <ol class="tut">
+    <li><strong>登录密码</strong>（用户名随意填，密码向管理员索取）。</li>
+    <li><strong>Sell-Thru Map（.xlsx）</strong>——需要补货的款式已标黄。每次运行都要上传。</li>
+    <li><strong>库存查询导出表（.xlsx）</strong>——必须是标准 13 列导出
+        （Barcode、Sku、Division、Department、Season、Product reference、
+        Color code、Size、Quantity、Unit Weighted Average Cost、
+        Unit Retail Price incl. tax、Item Type、Path）。
+        只需在第一次、或库存数据更新时上传——工具会保存它供后续使用。</li>
+  </ol>
+
+  <h2>第一次使用：一步步来</h2>
+  <ol class="tut">
+    <li>打开网站并登录。</li>
+    <li>如果首页显示“尚未存储库存查询表”，在第二个文件框选择库存查询表。</li>
+    <li>在第一个文件框选择 Sell-Thru Map。</li>
+    <li>点击<strong>开始处理</strong>。大文件需要一到两分钟，请保持页面打开。</li>
+    <li>处理完成后自动跳转到<strong>运行报告</strong>页，点击绿色按钮下载
+        ProductsList 工作簿。报告页的网址可以刷新、收藏、稍后再看。</li>
+  </ol>
+
+  <h2>怎么读运行报告？</h2>
+  <p>报告按四个步骤展示工具做了什么，每一步都可以点开核对：</p>
+  <ol class="tut">
+    <li><strong>第 1 步</strong>：每个工作表找到多少标黄单元格。点开可以看到
+        每个标黄单元格的<strong>具体位置</strong>（如 E19）、原始 SKU 和提取出的基础款号
+        ——想在 Excel 里核对时，按这个位置直接跳转即可。</li>
+    <li><strong>第 2 步</strong>：颜色款如何合并为基础款号。</li>
+    <li><strong>第 3 步</strong>：每个基础款号从库存查询表里取到了哪些行
+        （条形码、颜色、尺码、成本、零售价）。这些行就是最终输出的内容。</li>
+    <li><strong>第 4 步</strong>：工作簿如何生成（排序方式、公式、留空列）。</li>
+  </ol>
+  <p>报告底部还有两个需要留意的清单：</p>
+  <ul class="compact">
+    <li><strong>未匹配的基础款号</strong>——标黄了但库存查询表里查不到。
+        请确认查询表版本是否够新、范围是否包含该季节。这些款号也会写进输出
+        工作簿的 <code>Unmatched</code> 工作表。</li>
+    <li><strong>检测到的其他填充色</strong>——带灰色等其他底色的 SKU 单元格。
+        工具不会提取它们，但列出来请人工确认是否有漏标。</li>
+  </ul>
+
+  <h2>什么算“标黄”？（重要）</h2>
+  <p>两种黄色都算：地图原生的<strong>浅黄</strong>
+  <span class="sw" style="background:#FFF2CC"></span>（主题色，看起来很淡，
+  容易被肉眼忽略）和 Excel 标准的<strong>亮黄</strong>
+  <span class="sw" style="background:#FFFF00"></span>。
+  尺码行的浅蓝条纹底色 <span class="sw" style="background:#DAE3F3"></span>
+  是表格样式，永远不算标黄。</p>
+  <div class="warn">
+    <strong>常见困惑：</strong>“我在 Excel 里只看到 1 个黄色，工具却报了 43 个？”
+    多半有两个原因：① 浅黄非常淡，屏幕上几乎看不出来；②
+    <strong>工作表开着筛选</strong>，大部分行被隐藏了——工具会读取
+    <strong>所有行（包括被筛选隐藏的行）</strong>。
+    在 Excel 里点“数据 → 筛选”清除筛选，再按第 1 步列出的单元格位置逐个核对。
+  </div>
+
+  <h2>输出文件说明</h2>
+  <ul class="compact">
+    <li>每个匹配的颜色/尺码一行，按基础款号、颜色、尺码排序。</li>
+    <li><code>TotalCost</code> 与 <code>TotalSales</code> 是活公式
+        （数量 × 单价），改动数量后会自动重算。</li>
+    <li>条形码以<strong>文本</strong>保存——不会丢前导零、不会变成科学计数法。</li>
+    <li>Gift Recipient / Organization / Position 三列按模板要求留空。</li>
+    <li>只保留最近 <strong>10</strong> 次的输出和报告，请及时下载。</li>
+  </ul>
+
+  <h2>常见问题</h2>
+  <ul class="compact">
+    <li><strong>库存查询文件被拒绝</strong>——列名与标准 13 列不完全一致。
+        请用未经改动的原始导出文件；被拒绝时之前存储的版本不受影响。</li>
+    <li><strong>上传过大</strong>——合计上限 200 MB。</li>
+    <li><strong>页面语言</strong>——左上角按钮随时切换中英文，选择会被记住。</li>
+  </ul>
+
+{% else %}
+
+  <h2>What this tool does</h2>
+  <p>Each season's Sell-Thru Map from Dior marks reorder styles in
+  <strong>yellow</strong> — the note in cell E1 of the map says exactly that
+  (标黄款式后续有REORDER补货, "yellow-marked styles get reordered"). This tool
+  automates what used to be manual work:</p>
+  <ol class="tut">
+    <li>It scans <strong>every sheet</strong> of the map and finds each
+        yellow-highlighted SKU;</li>
+    <li>strips the trailing color code (<code>X</code> + 4 characters) to get
+        the <strong>base style number</strong>
+        (e.g. <code>644S16B7E72X5805</code> → <code>644S16B7E72</code>);</li>
+    <li>looks up <strong>every color and size variant</strong> of those styles
+        in the stored stock query export;</li>
+    <li>produces a filled, ready-to-use <strong>ProductsList workbook</strong>
+        for download.</li>
+  </ol>
+
+  <h2>What you need before you start</h2>
+  <ol class="tut">
+    <li>The <strong>login password</strong> (any username works; ask the admin
+        for the password).</li>
+    <li>The <strong>Sell-Thru Map (.xlsx)</strong> with reorder styles marked
+        yellow. Required for every run.</li>
+    <li>The <strong>stock query export (.xlsx)</strong> — the standard 13-column
+        export (Barcode, Sku, Division, Department, Season, Product reference,
+        Color code, Size, Quantity, Unit Weighted Average Cost, Unit Retail
+        Price incl. tax, Item Type, Path). You only upload it the first time,
+        or when stock data changes — the tool keeps it for later runs.</li>
+  </ol>
+
+  <h2>Your first run, step by step</h2>
+  <ol class="tut">
+    <li>Open the site and log in.</li>
+    <li>If the front page says "No stock query export stored yet", pick the
+        query export in the second file field.</li>
+    <li>Pick the Sell-Thru Map in the first file field.</li>
+    <li>Click <strong>Process</strong>. A large map takes a minute or two —
+        keep the page open.</li>
+    <li>You land on the <strong>run report</strong>; click the green button to
+        download the ProductsList workbook. The report page is a real URL —
+        refresh it, bookmark it, or come back to it later.</li>
+  </ol>
+
+  <h2>How to read the run report</h2>
+  <p>The report shows the work as four steps, each expandable for checking:</p>
+  <ol class="tut">
+    <li><strong>Step 1</strong>: how many highlighted cells each sheet
+        contained. Expand it to see <strong>every highlighted cell's
+        position</strong> (like E19), its SKU, and the base extracted — jump
+        to that cell in Excel if you want to verify by hand.</li>
+    <li><strong>Step 2</strong>: how colorways collapse into base styles.</li>
+    <li><strong>Step 3</strong>: for each base, the exact rows pulled from the
+        stock query (barcode, color, size, cost, retail). These rows are what
+        the output is built from.</li>
+    <li><strong>Step 4</strong>: how the workbook is written (sorting,
+        formulas, blank columns).</li>
+  </ol>
+  <p>Two lists at the bottom deserve attention:</p>
+  <ul class="compact">
+    <li><strong>Unmatched bases</strong> — highlighted, but not found in the
+        stock query. Check that your stored query export is recent enough and
+        covers the season. They are also written to the output's
+        <code>Unmatched</code> sheet.</li>
+    <li><strong>Other fills detected</strong> — SKU cells with gray or other
+        non-yellow fills. The tool does not extract them, but lists them so a
+        human can confirm nothing was mis-marked.</li>
+  </ul>
+
+  <h2>What counts as "highlighted"? (important)</h2>
+  <p>Both yellows count: the map's native <strong>pale yellow</strong>
+  <span class="sw" style="background:#FFF2CC"></span> (a theme color that
+  looks very faint on screen and is easy to miss by eye) and Excel's standard
+  <strong>bright yellow</strong> <span class="sw" style="background:#FFFF00"></span>.
+  The pale-blue banding on size rows
+  <span class="sw" style="background:#DAE3F3"></span> is sheet styling and
+  never counts.</p>
+  <div class="warn">
+    <strong>Common confusion:</strong> "Excel shows me 1 yellow cell but the
+    tool reports 43?" Two usual causes: ① the pale yellow is nearly invisible
+    on screen; ② <strong>the sheet has an active filter</strong> hiding most
+    rows — the tool reads <strong>all rows, including filter-hidden ones</strong>.
+    Clear the filter in Excel (Data → Filter), then verify against the cell
+    positions listed under Step 1.
+  </div>
+
+  <h2>About the output file</h2>
+  <ul class="compact">
+    <li>One row per matched color/size, sorted by base, color, size.</li>
+    <li><code>TotalCost</code> and <code>TotalSales</code> are live formulas
+        (quantity × unit price) — they recalculate if you edit quantities.</li>
+    <li>Barcodes are stored as <strong>text</strong> — no lost leading zeros,
+        no scientific notation.</li>
+    <li>Gift Recipient / Organization / Position stay blank, as the template
+        expects.</li>
+    <li>Only the last <strong>10</strong> outputs and reports are kept —
+        download what you need.</li>
+  </ul>
+
+  <h2>Troubleshooting</h2>
+  <ul class="compact">
+    <li><strong>Query file rejected</strong> — its header row doesn't exactly
+        match the 13 standard columns. Use an unmodified export; a rejected
+        upload never touches the previously stored copy.</li>
+    <li><strong>Upload too large</strong> — the combined limit is 200 MB.</li>
+    <li><strong>Language</strong> — the top-left button switches between
+        English and Chinese at any time; the choice is remembered.</li>
+  </ul>
+
+{% endif %}
+
+<p><a href="{{ url_for('index') }}">{{ t('back_to_upload') | safe }}</a></p>
+{% endblock %}
