@@ -12,7 +12,11 @@
   <p><a class="button" href="{{ url_for('download', run_id=run_id) }}">
     Download {{ download_name }}</a></p>
 
-  <h2>Highlights per sheet</h2>
+  <h2>Processing steps</h2>
+
+  <h3>Step 1 — scan every sheet for highlighted SKUs</h3>
+  <p class="muted">Every cell is checked for a SKU-shaped value; a cell counts
+    as highlighted when it carries the yellow "reorder" fill.</p>
   <table>
     <tr><th>Sheet</th><th>SKU cells</th><th>Highlighted cells</th>
         <th>Unique SKUs</th><th>Unique bases</th></tr>
@@ -23,6 +27,73 @@
           <td>{{ s.bases | length }}</td></tr>
     {% endfor %}
   </table>
+  {% for s in report.sheets %}
+    {% if s.highlighted_cell_details %}
+      <details>
+        <summary>{{ s.name }} — the {{ s.highlighted_cell_details | length }}
+          highlighted cells found</summary>
+        <table>
+          <tr><th>Cell</th><th>SKU (as highlighted)</th><th>Base extracted</th></tr>
+          {% for coord, sku, base in s.highlighted_cell_details %}
+            <tr><td>{{ coord }}</td><td>{{ sku }}</td><td>{{ base }}</td></tr>
+          {% endfor %}
+        </table>
+      </details>
+    {% endif %}
+  {% endfor %}
+
+  <h3>Step 2 — extract base SKUs</h3>
+  <p class="muted">The trailing color block (<code>X</code> + 4 characters) is
+    stripped from each highlighted SKU; duplicates collapse to
+    <strong>{{ report.bases | length }}</strong> unique bases.</p>
+  {% if report.base_skus %}
+    <details>
+      <summary>Base SKUs and the highlighted colorways behind them</summary>
+      <table>
+        <tr><th>Base SKU</th><th>From highlighted SKU(s)</th><th>Sheet(s)</th></tr>
+        {% for base, skus in report.base_skus.items() %}
+          <tr><td>{{ base }}</td><td>{{ skus | join(", ") }}</td>
+              <td>{{ report.bases[base] | join(", ") }}</td></tr>
+        {% endfor %}
+      </table>
+    </details>
+  {% endif %}
+
+  <h3>Step 3 — look up every color/size variant in the stock query</h3>
+  <p class="muted">A query row matches when the first
+    <code>&nbsp;-&nbsp;</code>-separated segment of its <code>Sku</code> equals
+    the base exactly. Expand a base to see the data pulled for it.</p>
+  {% if report.matched_rows %}
+    {% for base, rows in report.matched_rows.items() %}
+      <details>
+        <summary>{{ base }} — {{ rows | length }} query
+          row{{ "s" if rows | length != 1 }}</summary>
+        <table>
+          <tr><th>Barcode</th><th>Sku</th><th>Division</th><th>Department</th>
+              <th>Season</th><th>Qty</th><th>Unit cost</th><th>Unit retail</th></tr>
+          {% for r in rows[:50] %}
+            <tr><td>{{ r.barcode }}</td><td>{{ r.sku }}</td>
+                <td>{{ r.division }}</td><td>{{ r.department }}</td>
+                <td>{{ r.season }}</td><td>{{ r.quantity }}</td>
+                <td>{{ r.unit_cost }}</td><td>{{ r.unit_retail }}</td></tr>
+          {% endfor %}
+        </table>
+        {% if rows | length > 50 %}
+          <p class="muted">&hellip; and {{ rows | length - 50 }} more rows
+            (all are in the output workbook).</p>
+        {% endif %}
+      </details>
+    {% endfor %}
+  {% else %}
+    <p class="muted">No bases matched the stored query.</p>
+  {% endif %}
+
+  <h3>Step 4 — build the ProductsList workbook</h3>
+  <p class="muted">One row per matched query row
+    (<strong>{{ report.rows_written }}</strong> total), sorted by base, color,
+    size. <code>TotalCost</code> and <code>TotalSales</code> are written as
+    formulas; barcodes as text; Gift Recipient / Organization / Position left
+    blank. Unmatched bases go on the <code>Unmatched</code> sheet.</p>
 
   <h2>Matched bases ({{ report.matched_counts | length }})</h2>
   {% if report.matched_counts %}

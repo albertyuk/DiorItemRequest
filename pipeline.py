@@ -49,6 +49,9 @@ TEMPLATE_COLS = 13  # A..M
 # Cap the "other fills" review list so one oddly formatted sheet cannot
 # balloon the report.
 MAX_OTHER_FILLS = 200
+# Cap the per-sheet highlighted-cell trace shown on the report page (a fully
+# highlighted sheet must not produce an unbounded page).
+MAX_HIGHLIGHT_DETAILS = 1000
 
 
 def is_highlighted(cell) -> bool:
@@ -103,6 +106,8 @@ class SheetScan:
     sku_cells: int = 0
     highlighted_cells: int = 0
     highlighted_skus: set[str] = field(default_factory=set)
+    # step-by-step trace for the report page: (cell coordinate, sku, base)
+    highlighted_cell_details: list[tuple[str, str, str]] = field(default_factory=list)
     other_fills: list[tuple[str, str, str]] = field(default_factory=list)  # (coord, sku, note)
 
     @property
@@ -153,6 +158,9 @@ def scan_sell_thru_map(path) -> MapScan:
                     if is_highlighted(cell):
                         scan.highlighted_cells += 1
                         scan.highlighted_skus.add(sku)
+                        if len(scan.highlighted_cell_details) < MAX_HIGHLIGHT_DETAILS:
+                            scan.highlighted_cell_details.append(
+                                (cell.coordinate, sku, extract_base(sku)))
                     elif len(scan.other_fills) < MAX_OTHER_FILLS:
                         note = _fill_note(cell)
                         if note:
@@ -224,6 +232,8 @@ def match_query(path, bases) -> dict[str, list[tuple]]:
                 continue
             base = sku.split(" - ")[0]
             if base in bases:
+                if len(row) < 13:  # ragged row: pad so consumers can unpack
+                    row = tuple(row) + (None,) * (13 - len(row))
                 matched.setdefault(base, []).append(row)
     finally:
         wb.close()
@@ -306,10 +316,24 @@ def build_output(template_path, out_path, matched, unmatched_bases,
 class RunReport:
     sheets: list[SheetScan]
     bases: dict[str, list[str]]          # base -> sheets it was highlighted on
+    base_skus: dict[str, list[str]]      # base -> highlighted colorway SKUs
     matched_counts: dict[str, int]       # base -> number of query rows
+    matched_rows: dict[str, list[dict]]  # base -> query data pulled (trace)
     unmatched: list[str]
     other_fills: list[tuple[str, str, str, str]]
     rows_written: int
+
+
+def _trace_rows(rows) -> list[dict]:
+    """Shape matched query rows for the report page's step-by-step trace."""
+    out = []
+    for r in sorted(rows, key=_sku_sort_key):
+        out.append({
+            "barcode": _barcode_text(r[0]), "sku": r[1], "division": r[2],
+            "department": r[3], "season": r[4], "quantity": r[8],
+            "unit_cost": r[9], "unit_retail": r[10],
+        })
+    return out
 
 
 def run_pipeline(map_path, query_path, template_path, out_path) -> RunReport:
@@ -320,10 +344,16 @@ def run_pipeline(map_path, query_path, template_path, out_path) -> RunReport:
     rows_written = build_output(
         template_path, out_path, matched, unmatched, base_sheets=bases
     )
+    base_skus: dict[str, set] = {}
+    for sheet in scan.sheets:
+        for sku in sheet.highlighted_skus:
+            base_skus.setdefault(extract_base(sku), set()).add(sku)
     report = RunReport(
         sheets=scan.sheets,
         bases=bases,
+        base_skus={b: sorted(s) for b, s in sorted(base_skus.items())},
         matched_counts={b: len(matched[b]) for b in sorted(matched)},
+        matched_rows={b: _trace_rows(matched[b]) for b in sorted(matched)},
         unmatched=unmatched,
         other_fills=scan.other_fills,
         rows_written=rows_written,

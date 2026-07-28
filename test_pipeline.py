@@ -119,6 +119,9 @@ def test_look_total_block_layout_synthetic(tmp_path):
     grays = [note for _, _, note in lt.other_fills]
     assert len(grays) == 5
     assert all(note.startswith("theme") for note in grays)
+    # the step-trace records where each highlight was found and its base
+    assert len(lt.highlighted_cell_details) == 60
+    assert lt.highlighted_cell_details[0] == ("C8", "644T000A99X5800", "644T000A99")
 
 
 def test_rgb_yellow_fallback(tmp_path):
@@ -237,6 +240,17 @@ def test_end_to_end_upload_and_download(tmp_path):
     assert rows, "report page must state the number of rows written"
     rows_written = int(rows.group(1))
     assert 275 <= rows_written <= 295  # "~283", varies with query version
+
+    # the report must trace internal steps: highlighted cells found, base
+    # extraction, and the query data pulled per base
+    assert "Processing steps" in html
+    cell_trace = re.search(
+        r"<td>([A-Z]{1,3}\d+)</td><td>([0-9A-Z]{8,})</td><td>([0-9A-Z]{8,})</td>",
+        html.replace("\n", ""))
+    assert cell_trace, "step 1 must list highlighted cells with SKU and base"
+    detail = re.search(r"<summary>([0-9A-Z]{8,}) — (\d+) query", html)
+    assert detail, "step 3 must show per-base query detail"
+    assert detail.group(1) in html  # base appears in the matched table too
 
     dl = client.get(f"/download/{match.group(1)}")
     assert dl.status_code == 200
