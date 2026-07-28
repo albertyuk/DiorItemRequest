@@ -1,12 +1,13 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{ 'zh-CN' if lang == 'zh' else 'en' }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Dior item request — {% block title %}{% endblock %}</title>
+  <title>{{ t('site_title') }} — {% block title %}{% endblock %}</title>
   <style>
-    body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-           max-width: 46rem; margin: 2rem auto; padding: 0 1rem;
+    body { font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC",
+           "Microsoft YaHei", sans-serif;
+           max-width: 46rem; margin: 2.6rem auto 2rem; padding: 0 1rem;
            color: #1a1a1a; line-height: 1.5; }
     h1 { font-size: 1.4rem; }
     h2 { font-size: 1.1rem; margin-top: 1.8rem; }
@@ -36,10 +37,19 @@
                padding: .55rem 1.3rem; border-radius: 4px;
                text-decoration: none; margin: .6rem 0; }
     ul.compact { margin: .3rem 0; padding-left: 1.3rem; }
+    a.lang { position: absolute; top: .8rem; left: 1rem; font-size: .92rem;
+             text-decoration: none; border: 1px solid #ccc;
+             border-radius: 4px; padding: .25rem .7rem; color: #1a1a1a;
+             background: #f8f8f8; }
+    a.lang:hover { background: #eee; }
   </style>
 </head>
 <body>
-  <h1>Dior item request — highlighted-SKU extractor</h1>
+  {% set other_lang = 'zh' if lang == 'en' else 'en' %}
+  {% set lang_target = (request.path if request.method == 'GET'
+                        else url_for('index')) ~ '?lang=' ~ other_lang %}
+  <a class="lang" href="{{ lang_target }}" rel="nofollow">{{ t('lang_switch') }}</a>
+  <h1>{{ t('site_title') }}</h1>
   {% block content %}{% endblock %}
 </body>
 </html>

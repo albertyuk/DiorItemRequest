@@ -231,6 +231,7 @@ def test_end_to_end_upload_and_download(tmp_path):
             "/process",
             data={"map_file": (m, "map.xlsx"), "query_file": (q, "query.xlsx")},
             content_type="multipart/form-data",
+            follow_redirects=True,  # POST redirects to GET /report/<run_id>
         )
     assert resp.status_code == 200
     html = resp.data.decode()
@@ -267,11 +268,24 @@ def test_end_to_end_upload_and_download(tmp_path):
     assert b"Stored stock query" in page.data
     with MAP.open("rb") as m:
         resp = client.post("/process", data={"map_file": (m, "map.xlsx")},
-                           content_type="multipart/form-data")
+                           content_type="multipart/form-data",
+                           follow_redirects=True)
     assert resp.status_code == 200
     second = re.search(r"/download/(\d{8}_\d{6}_[0-9a-f]{6})",
                        resp.data.decode())
     assert second and second.group(1) != match.group(1)
+
+    # the report is persistent (refresh-safe) and language-switchable:
+    # the same run re-renders in Chinese with the same download link
+    zh = client.get(f"/report/{match.group(1)}?lang=zh")
+    assert zh.status_code == 200
+    zh_html = zh.data.decode()
+    assert "处理步骤" in zh_html            # "Processing steps"
+    assert "标黄基础款号" in zh_html         # cohesive summary wording
+    assert f"/download/{match.group(1)}" in zh_html
+    # and back to English via the toggle
+    en = client.get(f"/report/{match.group(1)}?lang=en")
+    assert "Processing steps" in en.data.decode()
 
 
 def test_query_upload_with_wrong_headers_is_rejected(tmp_path):
@@ -328,6 +342,39 @@ def test_basic_auth_required_when_password_set(tmp_path):
     wrong = base64.b64encode(b"anyuser:nope").decode()
     assert client.get("/", headers={"Authorization": f"Basic {wrong}"}) \
         .status_code == 401
+
+
+def test_language_toggle_and_cookie(tmp_path):
+    app = create_app(data_dir=tmp_path, password="")
+    client = app.test_client()
+
+    # default is English, with a top-left switch offering Chinese
+    page = client.get("/")
+    assert "No stock query export stored yet" in page.data.decode()
+    assert 'class="lang"' in page.data.decode()
+    assert "中文" in page.data.decode()
+
+    # ?lang=zh renders Chinese and persists the choice in a cookie
+    page = client.get("/?lang=zh")
+    html = page.data.decode()
+    assert "尚未存储库存查询表" in html
+    assert "开始处理" in html          # Process button
+    assert "English" in html           # switch now offers English
+    assert "lang=zh" in page.headers.get("Set-Cookie", "")
+
+    # subsequent plain requests stay in Chinese via the cookie
+    page = client.get("/")
+    assert "尚未存储库存查询表" in page.data.decode()
+
+    # switching back works
+    page = client.get("/?lang=en")
+    assert "No stock query export stored yet" in page.data.decode()
+
+    # error pages are translated too
+    resp = client.post("/process?lang=zh", data={},
+                       content_type="multipart/form-data")
+    assert resp.status_code == 400
+    assert "每次运行都必须上传" in resp.data.decode()
 
 
 def test_basic_auth_handles_non_ascii_passwords(tmp_path):

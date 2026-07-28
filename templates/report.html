@@ -1,25 +1,26 @@
 {% extends "base.html" %}
-{% block title %}run report{% endblock %}
+{% block title %}{{ t('page_report') }}{% endblock %}
 {% block content %}
-  <p><a href="{{ url_for('index') }}">&larr; new run</a></p>
+  <p><a href="{{ url_for('index') }}">{{ t('new_run') | safe }}</a></p>
 
   <div class="ok">
-    Processed <strong>{{ map_filename }}</strong> —
-    wrote <strong>{{ report.rows_written }}</strong> rows for
-    <strong>{{ report.matched_counts | length }}</strong> of
-    <strong>{{ report.bases | length }}</strong> highlighted base SKUs.
+    {{ t('processed_summary',
+         map=map_filename | e,
+         rows=report.rows_written,
+         matched=report.matched_counts | length,
+         total=report.bases | length) | safe }}
   </div>
   <p><a class="button" href="{{ url_for('download', run_id=run_id) }}">
-    Download {{ download_name }}</a></p>
+    {{ t('download_label', name=download_name) }}</a></p>
 
-  <h2>Processing steps</h2>
+  <h2>{{ t('steps_heading') }}</h2>
 
-  <h3>Step 1 — scan every sheet for highlighted SKUs</h3>
-  <p class="muted">Every cell is checked for a SKU-shaped value; a cell counts
-    as highlighted when it carries the yellow "reorder" fill.</p>
+  <h3>{{ t('step1_title') }}</h3>
+  <p class="muted">{{ t('step1_desc') | safe }}</p>
   <table>
-    <tr><th>Sheet</th><th>SKU cells</th><th>Highlighted cells</th>
-        <th>Unique SKUs</th><th>Unique bases</th></tr>
+    <tr><th>{{ t('th_sheet') }}</th><th>{{ t('th_sku_cells') }}</th>
+        <th>{{ t('th_highlighted_cells') }}</th>
+        <th>{{ t('th_unique_skus') }}</th><th>{{ t('th_unique_bases') }}</th></tr>
     {% for s in report.sheets %}
       <tr><td>{{ s.name }}</td><td>{{ s.sku_cells }}</td>
           <td>{{ s.highlighted_cells }}</td>
@@ -30,10 +31,11 @@
   {% for s in report.sheets %}
     {% if s.highlighted_cell_details %}
       <details>
-        <summary>{{ s.name }} — the {{ s.highlighted_cell_details | length }}
-          highlighted cells found</summary>
+        <summary>{{ t('sheet_details_summary', sheet=s.name,
+                      n=s.highlighted_cell_details | length) }}</summary>
         <table>
-          <tr><th>Cell</th><th>SKU (as highlighted)</th><th>Base extracted</th></tr>
+          <tr><th>{{ t('th_cell') }}</th><th>{{ t('th_sku_as_highlighted') }}</th>
+              <th>{{ t('th_base_extracted') }}</th></tr>
           {% for coord, sku, base in s.highlighted_cell_details %}
             <tr><td>{{ coord }}</td><td>{{ sku }}</td><td>{{ base }}</td></tr>
           {% endfor %}
@@ -42,15 +44,14 @@
     {% endif %}
   {% endfor %}
 
-  <h3>Step 2 — extract base SKUs</h3>
-  <p class="muted">The trailing color block (<code>X</code> + 4 characters) is
-    stripped from each highlighted SKU; duplicates collapse to
-    <strong>{{ report.bases | length }}</strong> unique bases.</p>
+  <h3>{{ t('step2_title') }}</h3>
+  <p class="muted">{{ t('step2_desc', n=report.bases | length) | safe }}</p>
   {% if report.base_skus %}
     <details>
-      <summary>Base SKUs and the highlighted colorways behind them</summary>
+      <summary>{{ t('base_skus_summary') }}</summary>
       <table>
-        <tr><th>Base SKU</th><th>From highlighted SKU(s)</th><th>Sheet(s)</th></tr>
+        <tr><th>{{ t('th_base') }}</th><th>{{ t('th_from_skus') }}</th>
+            <th>{{ t('th_sheets') }}</th></tr>
         {% for base, skus in report.base_skus.items() %}
           <tr><td>{{ base }}</td><td>{{ skus | join(", ") }}</td>
               <td>{{ report.bases[base] | join(", ") }}</td></tr>
@@ -59,18 +60,17 @@
     </details>
   {% endif %}
 
-  <h3>Step 3 — look up every color/size variant in the stock query</h3>
-  <p class="muted">A query row matches when the first
-    <code>&nbsp;-&nbsp;</code>-separated segment of its <code>Sku</code> equals
-    the base exactly. Expand a base to see the data pulled for it.</p>
+  <h3>{{ t('step3_title') }}</h3>
+  <p class="muted">{{ t('step3_desc') | safe }}</p>
   {% if report.matched_rows %}
     {% for base, rows in report.matched_rows.items() %}
       <details>
-        <summary>{{ base }} — {{ rows | length }} query
-          row{{ "s" if rows | length != 1 }}</summary>
+        <summary>{{ t('base_query_rows', base=base, n=rows | length) }}</summary>
         <table>
-          <tr><th>Barcode</th><th>Sku</th><th>Division</th><th>Department</th>
-              <th>Season</th><th>Qty</th><th>Unit cost</th><th>Unit retail</th></tr>
+          <tr><th>{{ t('th_barcode') }}</th><th>{{ t('th_qsku') }}</th>
+              <th>{{ t('th_division') }}</th><th>{{ t('th_department') }}</th>
+              <th>{{ t('th_season') }}</th><th>{{ t('th_qty') }}</th>
+              <th>{{ t('th_unit_cost') }}</th><th>{{ t('th_unit_retail') }}</th></tr>
           {% for r in rows[:50] %}
             <tr><td>{{ r.barcode }}</td><td>{{ r.sku }}</td>
                 <td>{{ r.division }}</td><td>{{ r.department }}</td>
@@ -79,41 +79,35 @@
           {% endfor %}
         </table>
         {% if rows | length > 50 %}
-          <p class="muted">&hellip; and {{ rows | length - 50 }} more rows
-            (all are in the output workbook).</p>
+          <p class="muted">{{ t('more_rows', n=rows | length - 50) | safe }}</p>
         {% endif %}
       </details>
     {% endfor %}
   {% else %}
-    <p class="muted">No bases matched the stored query.</p>
+    <p class="muted">{{ t('no_matches') }}</p>
   {% endif %}
 
-  <h3>Step 4 — build the ProductsList workbook</h3>
-  <p class="muted">One row per matched query row
-    (<strong>{{ report.rows_written }}</strong> total), sorted by base, color,
-    size. <code>TotalCost</code> and <code>TotalSales</code> are written as
-    formulas; barcodes as text; Gift Recipient / Organization / Position left
-    blank. Unmatched bases go on the <code>Unmatched</code> sheet.</p>
+  <h3>{{ t('step4_title') }}</h3>
+  <p class="muted">{{ t('step4_desc', rows=report.rows_written) | safe }}</p>
 
-  <h2>Matched bases ({{ report.matched_counts | length }})</h2>
+  <h2>{{ t('matched_heading', n=report.matched_counts | length) }}</h2>
   {% if report.matched_counts %}
     <table>
-      <tr><th>Base SKU</th><th>Query rows</th><th>Highlighted on</th></tr>
+      <tr><th>{{ t('th_base') }}</th><th>{{ t('th_query_rows') }}</th>
+          <th>{{ t('th_highlighted_on') }}</th></tr>
       {% for base, count in report.matched_counts.items() %}
         <tr><td>{{ base }}</td><td>{{ count }}</td>
             <td>{{ report.bases[base] | join(", ") }}</td></tr>
       {% endfor %}
     </table>
   {% else %}
-    <p class="muted">None.</p>
+    <p class="muted">{{ t('none_label') }}</p>
   {% endif %}
 
-  <h2>Unmatched bases ({{ report.unmatched | length }})</h2>
+  <h2>{{ t('unmatched_heading', n=report.unmatched | length) }}</h2>
   {% if report.unmatched %}
     <div class="warn">
-      These highlighted bases had <strong>no rows</strong> in the stored stock
-      query. They are also listed on the <code>Unmatched</code> sheet of the
-      output workbook.
+      {{ t('unmatched_note') | safe }}
       <ul class="compact">
         {% for base in report.unmatched %}
           <li>{{ base }} <span class="muted">({{ report.bases[base] | join(", ") }})</span></li>
@@ -121,17 +115,16 @@
       </ul>
     </div>
   {% else %}
-    <p class="muted">None — every highlighted base matched at least one query row.</p>
+    <p class="muted">{{ t('none_unmatched') }}</p>
   {% endif %}
 
-  <h2>Other fills detected ({{ report.other_fills | length }})</h2>
+  <h2>{{ t('other_fills_heading', n=report.other_fills | length) }}</h2>
   {% if report.other_fills %}
     <div class="warn">
-      These SKU cells carry a solid fill that is neither the yellow highlight
-      nor the structural banding (gray notes, etc.). They were <strong>not</strong>
-      extracted — please check them by hand.
+      {{ t('other_fills_note') | safe }}
       <table>
-        <tr><th>Sheet</th><th>Cell</th><th>SKU</th><th>Fill</th></tr>
+        <tr><th>{{ t('th_sheet') }}</th><th>{{ t('th_cell') }}</th>
+            <th>SKU</th><th>{{ t('th_fill') }}</th></tr>
         {% for sheet, coord, sku, note in report.other_fills %}
           <tr><td>{{ sheet }}</td><td>{{ coord }}</td>
               <td>{{ sku }}</td><td>{{ note }}</td></tr>
@@ -139,6 +132,6 @@
       </table>
     </div>
   {% else %}
-    <p class="muted">None.</p>
+    <p class="muted">{{ t('none_label') }}</p>
   {% endif %}
 {% endblock %}

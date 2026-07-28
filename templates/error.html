@@ -1,6 +1,6 @@
 {% extends "base.html" %}
-{% block title %}error{% endblock %}
+{% block title %}{{ t('page_error') }}{% endblock %}
 {% block content %}
-  <div class="error"><strong>Something went wrong.</strong><br>{{ message }}</div>
-  <p><a href="{{ url_for('index') }}">&larr; back to upload</a></p>
+  <div class="error"><strong>{{ t('error_heading') }}</strong><br>{{ message }}</div>
+  <p><a href="{{ url_for('index') }}">{{ t('back_to_upload') | safe }}</a></p>
 {% endblock %}

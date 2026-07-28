@@ -21,6 +21,11 @@ filled **ProductsList** workbook for download.
 - Output = copy of `assets/ProductsListTemplate.xlsx` with mapped columns,
   `TotalCost`/`TotalSales` as formulas, barcodes as text, plus an
   `Unmatched` sheet listing highlighted bases with zero query rows.
+- The UI is bilingual (English / 简体中文) — top-left toggle, remembered in a
+  cookie. Strings live in `translations.py`. Run reports are persisted as
+  JSON next to their output (`/report/<run_id>`), so they survive refresh
+  and can be re-read later in either language; they are pruned together
+  with their workbook (last 10 kept).
 
 ## Local run
 
