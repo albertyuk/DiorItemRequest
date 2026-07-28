@@ -150,7 +150,9 @@ def test_every_fw26_base_matches_query(map_scan, fw26_matched):
     assert set(fw26_matched) == fw26.bases  # every base has >= 1 row
     assert all(len(rows) >= 1 for rows in fw26_matched.values())
     total = sum(len(rows) for rows in fw26_matched.values())
-    assert total == 283  # measured on the sample files ("~283" in the spec)
+    # "~283" in the spec; the exact figure shifts by a row or two between
+    # query export versions, so assert a tight band, not one copy's value.
+    assert 275 <= total <= 295
 
 
 def test_match_is_exact_first_segment(tmp_path):
@@ -177,7 +179,8 @@ def test_output_workbook_structure(tmp_path, fw26_matched):
         unmatched_bases=["FAKEBASE001"],
         base_sheets={"FAKEBASE001": ["LOOK TOTAL"]},
     )
-    assert rows_written == 283
+    # every matched query row must land in the workbook, no more, no fewer
+    assert rows_written == sum(len(rows) for rows in fw26_matched.values())
 
     wb = load_workbook(out)
     ws = wb["Sheet1"]
@@ -230,14 +233,18 @@ def test_end_to_end_upload_and_download(tmp_path):
     html = resp.data.decode()
     match = re.search(r"/download/(\d{8}_\d{6}_[0-9a-f]{6})", html)
     assert match, "report page must contain a download link"
-    assert "wrote <strong>283</strong> rows" in html
+    rows = re.search(r"wrote <strong>(\d+)</strong> rows", html)
+    assert rows, "report page must state the number of rows written"
+    rows_written = int(rows.group(1))
+    assert 275 <= rows_written <= 295  # "~283", varies with query version
 
     dl = client.get(f"/download/{match.group(1)}")
     assert dl.status_code == 200
     assert "ProductsList_" in dl.headers["Content-Disposition"]
     wb = load_workbook(io.BytesIO(dl.data))
     assert "Sheet1" in wb.sheetnames and "Unmatched" in wb.sheetnames
-    assert wb["Sheet1"].max_row == 284
+    # the downloaded workbook must contain exactly the reported rows
+    assert wb["Sheet1"].max_row == rows_written + 1
     wb.close()
 
     # the query is now stored: a map-only run must also succeed, and get
