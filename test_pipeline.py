@@ -357,14 +357,14 @@ def test_language_toggle_and_cookie(tmp_path):
     # ?lang=zh renders Chinese and persists the choice in a cookie
     page = client.get("/?lang=zh")
     html = page.data.decode()
-    assert "尚未存储库存查询表" in html
+    assert "还没有保存库存查询表" in html
     assert "开始处理" in html          # Process button
     assert "English" in html           # switch now offers English
     assert "lang=zh" in page.headers.get("Set-Cookie", "")
 
     # subsequent plain requests stay in Chinese via the cookie
     page = client.get("/")
-    assert "尚未存储库存查询表" in page.data.decode()
+    assert "还没有保存库存查询表" in page.data.decode()
 
     # switching back works
     page = client.get("/?lang=en")
@@ -374,7 +374,7 @@ def test_language_toggle_and_cookie(tmp_path):
     resp = client.post("/process?lang=zh", data={},
                        content_type="multipart/form-data")
     assert resp.status_code == 400
-    assert "每次运行都必须上传" in resp.data.decode()
+    assert "请先选择 Sell-Thru Map" in resp.data.decode()
 
 
 def test_help_page_in_both_languages(tmp_path):

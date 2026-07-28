@@ -11,90 +11,92 @@
 {% if lang == 'zh' %}
 
   <h2>这个工具是做什么的？</h2>
-  <p>每季 Dior 发来的 Sell-Thru Map（销售进度表）里，需要补货（REORDER）的款式会
-  被<strong>标黄</strong>——表内 E1 单元格的备注就是这么说明的：
-  “标黄款式后续有REORDER补货”。本工具把这件原本要手工完成的事自动化：</p>
+  <p>每季 Dior 发来的 Sell-Thru Map（销售进度表）里，需要补货的款式会
+  <strong>标黄</strong>——表里 E1 单元格的备注写得很清楚：
+  “标黄款式后续有REORDER补货”。以前要靠手工逐个整理，现在工具会自动完成：</p>
   <ol class="tut">
     <li>扫描 Sell-Thru Map 的<strong>所有工作表</strong>，找出每一个标黄的 SKU；</li>
     <li>去掉 SKU 末尾的颜色码（<code>X</code> + 4 位），得到<strong>基础款号</strong>
         （例如 <code>644S16B7E72X5805</code> → <code>644S16B7E72</code>）；</li>
-    <li>在已存储的<strong>库存查询表</strong>中找出这些款号的
-        <strong>全部颜色和尺码</strong>；</li>
-    <li>生成一份填写完整、可直接使用的 <strong>ProductsList 工作簿</strong>供下载。</li>
+    <li>在保存好的<strong>库存查询表</strong>里，把这些款号的
+        <strong>所有颜色和尺码</strong>都找出来；</li>
+    <li>生成一份可以直接使用的 <strong>ProductsList 工作簿</strong>，下载即可。</li>
   </ol>
 
   <h2>开始前需要准备什么？</h2>
   <ol class="tut">
-    <li><strong>登录密码</strong>（用户名随意填，密码向管理员索取）。</li>
-    <li><strong>Sell-Thru Map（.xlsx）</strong>——需要补货的款式已标黄。每次运行都要上传。</li>
-    <li><strong>库存查询导出表（.xlsx）</strong>——必须是标准 13 列导出
+    <li><strong>登录密码</strong>：用户名随便填，密码找管理员要。</li>
+    <li><strong>Sell-Thru Map（.xlsx）</strong>：需要补货的款式已经标黄，
+        每次处理都要上传。</li>
+    <li><strong>库存查询表（.xlsx）</strong>：必须是标准的 13 列导出文件
         （Barcode、Sku、Division、Department、Season、Product reference、
         Color code、Size、Quantity、Unit Weighted Average Cost、
         Unit Retail Price incl. tax、Item Type、Path）。
-        只需在第一次、或库存数据更新时上传——工具会保存它供后续使用。</li>
+        只在第一次使用或库存数据更新时上传一次，工具会自动保存。</li>
   </ol>
 
-  <h2>第一次使用：一步步来</h2>
+  <h2>第一次使用：操作步骤</h2>
   <ol class="tut">
-    <li>打开网站并登录。</li>
-    <li>如果首页显示“尚未存储库存查询表”，在第二个文件框选择库存查询表。</li>
-    <li>在第一个文件框选择 Sell-Thru Map。</li>
-    <li>点击<strong>开始处理</strong>。大文件需要一到两分钟，请保持页面打开。</li>
-    <li>处理完成后自动跳转到<strong>运行报告</strong>页，点击绿色按钮下载
-        ProductsList 工作簿。报告页的网址可以刷新、收藏、稍后再看。</li>
+    <li>打开网站，输入密码登录。</li>
+    <li>如果首页提示“还没有保存库存查询表”，在第二个文件框里选择库存查询表。</li>
+    <li>在第一个文件框里选择 Sell-Thru Map。</li>
+    <li>点击<strong>开始处理</strong>。文件较大时需要一两分钟，请不要关闭页面。</li>
+    <li>处理完成后会自动进入<strong>运行报告</strong>页，点绿色按钮下载
+        ProductsList 工作簿。报告页有独立网址，可以刷新、收藏，之后随时回看。</li>
   </ol>
 
-  <h2>怎么读运行报告？</h2>
-  <p>报告按四个步骤展示工具做了什么，每一步都可以点开核对：</p>
+  <h2>如何阅读运行报告？</h2>
+  <p>报告分四个步骤，展示工具每一步做了什么，都可以点开逐项核对：</p>
   <ol class="tut">
-    <li><strong>第 1 步</strong>：每个工作表找到多少标黄单元格。点开可以看到
-        每个标黄单元格的<strong>具体位置</strong>（如 E19）、原始 SKU 和提取出的基础款号
-        ——想在 Excel 里核对时，按这个位置直接跳转即可。</li>
-    <li><strong>第 2 步</strong>：颜色款如何合并为基础款号。</li>
-    <li><strong>第 3 步</strong>：每个基础款号从库存查询表里取到了哪些行
-        （条形码、颜色、尺码、成本、零售价）。这些行就是最终输出的内容。</li>
-    <li><strong>第 4 步</strong>：工作簿如何生成（排序方式、公式、留空列）。</li>
+    <li><strong>第 1 步</strong>：每个工作表找到了多少标黄单元格。点开能看到
+        每个标黄单元格的<strong>具体位置</strong>（比如 E19）、原始 SKU 和提取出的
+        基础款号——想在 Excel 里核对，按位置直接跳过去就行。</li>
+    <li><strong>第 2 步</strong>：不同颜色款如何归并成基础款号。</li>
+    <li><strong>第 3 步</strong>：每个基础款号在库存查询表里匹配到了哪些行
+        （条形码、颜色、尺码、成本价、零售价）。这些就是最终写进输出文件的数据。</li>
+    <li><strong>第 4 步</strong>：输出文件是怎么生成的（排序规则、公式、留空的列）。</li>
   </ol>
-  <p>报告底部还有两个需要留意的清单：</p>
+  <p>报告底部还有两个清单，需要留意：</p>
   <ul class="compact">
-    <li><strong>未匹配的基础款号</strong>——标黄了但库存查询表里查不到。
-        请确认查询表版本是否够新、范围是否包含该季节。这些款号也会写进输出
-        工作簿的 <code>Unmatched</code> 工作表。</li>
-    <li><strong>检测到的其他填充色</strong>——带灰色等其他底色的 SKU 单元格。
-        工具不会提取它们，但列出来请人工确认是否有漏标。</li>
+    <li><strong>未匹配的基础款号</strong>：标黄了，但库存查询表里查不到。
+        请确认查询表是不是最新版本、有没有覆盖对应季节。这些款号也会写进输出
+        文件的 <code>Unmatched</code> 工作表。</li>
+    <li><strong>其他底色的 SKU 单元格</strong>：底色是灰色等其他颜色的单元格。
+        工具不会提取它们，列出来是方便人工确认有没有漏标。</li>
   </ul>
 
-  <h2>什么算“标黄”？（重要）</h2>
-  <p>两种黄色都算：地图原生的<strong>浅黄</strong>
-  <span class="sw" style="background:#FFF2CC"></span>（主题色，看起来很淡，
-  容易被肉眼忽略）和 Excel 标准的<strong>亮黄</strong>
+  <h2>什么样的才算“标黄”？（重要）</h2>
+  <p>两种黄色都算：Sell-Thru Map 原本使用的<strong>浅黄</strong>
+  <span class="sw" style="background:#FFF2CC"></span>（颜色很淡，
+  肉眼容易漏看）和 Excel 标准的<strong>亮黄</strong>
   <span class="sw" style="background:#FFFF00"></span>。
-  尺码行的浅蓝条纹底色 <span class="sw" style="background:#DAE3F3"></span>
-  是表格样式，永远不算标黄。</p>
+  尺码行的浅蓝条纹 <span class="sw" style="background:#DAE3F3"></span>
+  只是表格样式，永远不算标黄。</p>
   <div class="warn">
-    <strong>常见困惑：</strong>“我在 Excel 里只看到 1 个黄色，工具却报了 43 个？”
-    多半有两个原因：① 浅黄非常淡，屏幕上几乎看不出来；②
-    <strong>工作表开着筛选</strong>，大部分行被隐藏了——工具会读取
-    <strong>所有行（包括被筛选隐藏的行）</strong>。
-    在 Excel 里点“数据 → 筛选”清除筛选，再按第 1 步列出的单元格位置逐个核对。
+    <strong>常见疑问：</strong>“Excel 里明明只看到 1 个黄色，工具怎么报了 43 个？”
+    通常是两个原因：① 浅黄太淡，在屏幕上几乎看不出来；②
+    <strong>工作表开着筛选</strong>，大部分行被隐藏了——而工具读取的是
+    <strong>全部行，包括被筛选隐藏的行</strong>。
+    在 Excel 里点“数据 → 筛选”清除筛选，再对照第 1 步列出的单元格位置逐个核对。
   </div>
 
-  <h2>输出文件说明</h2>
+  <h2>关于输出文件</h2>
   <ul class="compact">
-    <li>每个匹配的颜色/尺码一行，按基础款号、颜色、尺码排序。</li>
-    <li><code>TotalCost</code> 与 <code>TotalSales</code> 是活公式
-        （数量 × 单价），改动数量后会自动重算。</li>
-    <li>条形码以<strong>文本</strong>保存——不会丢前导零、不会变成科学计数法。</li>
+    <li>每个匹配到的颜色/尺码占一行，按基础款号、颜色、尺码排序。</li>
+    <li><code>TotalCost</code> 和 <code>TotalSales</code> 是公式
+        （数量 × 单价），修改数量后会自动重新计算。</li>
+    <li>条形码保存为<strong>文本</strong>格式，不会丢失前导零，
+        也不会变成科学计数法。</li>
     <li>Gift Recipient / Organization / Position 三列按模板要求留空。</li>
-    <li>只保留最近 <strong>10</strong> 次的输出和报告，请及时下载。</li>
+    <li>只保留最近 <strong>10</strong> 次的输出和报告，需要的文件请及时下载。</li>
   </ul>
 
   <h2>常见问题</h2>
   <ul class="compact">
-    <li><strong>库存查询文件被拒绝</strong>——列名与标准 13 列不完全一致。
-        请用未经改动的原始导出文件；被拒绝时之前存储的版本不受影响。</li>
-    <li><strong>上传过大</strong>——合计上限 200 MB。</li>
-    <li><strong>页面语言</strong>——左上角按钮随时切换中英文，选择会被记住。</li>
+    <li><strong>库存查询表被拒绝</strong>：列名和标准 13 列不完全一致。
+        请使用未经改动的原始导出文件；上传被拒绝时，之前保存的版本不受影响。</li>
+    <li><strong>提示文件过大</strong>：单次上传合计不能超过 200 MB。</li>
+    <li><strong>切换语言</strong>：左上角按钮随时切换中英文，选择会被记住。</li>
   </ul>
 
 {% else %}
