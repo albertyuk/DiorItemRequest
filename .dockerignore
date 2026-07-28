@@ -1,5 +1,6 @@
 samples/
 data/
+.venv/
 .git/
 __pycache__/
 *.pyc

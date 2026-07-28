@@ -60,7 +60,7 @@ sample copy of the map does not contain) run against generated fixtures.
 fly launch --no-deploy          # accepts existing fly.toml; pick/adjust app name
 fly volumes create data --size 1
 fly secrets set APP_PASSWORD=<choose-a-strong-password>
-fly deploy
+fly deploy --ha=false
 ```
 
 Notes:
@@ -70,6 +70,11 @@ Notes:
   HTTP Basic auth: any username, this password.
 - The machine needs **1 GB memory** (set in `fly.toml`) — parsing the ~70 MB
   map read-only peaks well above the 256 MB default.
+- **Deploy with `--ha=false` (single machine).** Fly's default first deploy
+  creates two machines, each with its *own* independent `data` volume, so
+  the stored query and generated outputs would randomly split between them
+  (uploads landing on one machine, downloads 404ing on the other). If the
+  app already has two machines, fix it with `fly scale count 1`.
 - The `data` volume persists the stored query export and the last 10
   generated outputs across machine stops.
 - Uploads are capped at 200 MB; a run takes tens of seconds (synchronous,

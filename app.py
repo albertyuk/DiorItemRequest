@@ -10,7 +10,6 @@ import logging
 import os
 import re
 import uuid
-import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -25,7 +24,7 @@ import pipeline
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger("app")
 
-RUN_ID_RE = re.compile(r"^\d{8}_\d{6}$")
+RUN_ID_RE = re.compile(r"^\d{8}_\d{6}_[0-9a-f]{6}$")
 KEEP_OUTPUTS = 10
 MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 
@@ -94,8 +93,11 @@ def create_app(data_dir: Path | str | None = None,
         if not password:
             return None  # local development: open access
         auth = request.authorization
+        # Compare as bytes: compare_digest on str rejects non-ASCII input
+        # with a TypeError, which would turn a login typo into a 500.
         if (auth and auth.type == "basic" and auth.password
-                and hmac.compare_digest(auth.password, password)):
+                and hmac.compare_digest(auth.password.encode("utf-8"),
+                                        password.encode("utf-8"))):
             return None
         return Response(
             "Authentication required.", 401,
@@ -143,14 +145,19 @@ def create_app(data_dir: Path | str | None = None,
 
         map_tmp = save_upload(map_file, "map")
         run_at = datetime.now()
-        run_id = run_at.strftime("%Y%m%d_%H%M%S")
+        # The uuid suffix keeps concurrent runs (2 gunicorn threads) from
+        # sharing an output path and serving each other's workbooks.
+        run_id = f"{run_at.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
         out_path = outputs_dir / f"ProductsList_{run_id}.xlsx"
         try:
             report = pipeline.run_pipeline(
                 map_tmp, stored_query, template_path, out_path)
-        except (zipfile.BadZipFile, KeyError, ValueError, OSError) as exc:
+        except Exception as exc:
+            # Malformed maps fail in many shapes (BadZipFile, XML
+            # ParseError, KeyError, ...) — all must land on the friendly
+            # error page, never the bare 500.
             out_path.unlink(missing_ok=True)
-            log.warning("processing failed: %s", exc)
+            log.exception("processing failed")
             return error_page(
                 "The sell-thru map could not be processed as an .xlsx "
                 f"workbook: {exc}")
@@ -191,6 +198,11 @@ def create_app(data_dir: Path | str | None = None,
     def not_found(_exc):
         return error_page("Not found — the file may have been pruned "
                           "(only the last 10 outputs are kept).", 404)
+
+    @app.errorhandler(500)
+    def internal_error(_exc):
+        return error_page("Unexpected server error — details are in the "
+                          "application log.", 500)
 
     return app
 

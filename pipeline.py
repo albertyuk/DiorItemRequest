@@ -78,9 +78,18 @@ def _fill_note(cell) -> str | None:
         tint = fg.tint or 0
         return f"theme {theme}, tint {tint:.2f}"
     rgb = fg.rgb if isinstance(fg.rgb, str) else ""
-    if not rgb or rgb[-6:].upper() in YELLOW_FAMILY:
-        return None
-    return f"rgb {rgb[-6:].upper()}"
+    if rgb:
+        if rgb[-6:].upper() in YELLOW_FAMILY:
+            return None
+        return f"rgb {rgb[-6:].upper()}"
+    # Legacy color types (indexed palette, auto) — openpyxl exposes unset
+    # attributes as descriptor objects, so nothing above matched. These are
+    # never treated as highlights, but must still reach the human review
+    # list rather than vanish silently.
+    indexed = getattr(fg, "indexed", None)
+    if isinstance(indexed, int):
+        return f"indexed color {indexed}"
+    return "unrecognized solid fill"
 
 
 def extract_base(sku: str) -> str:

@@ -228,24 +228,29 @@ def test_end_to_end_upload_and_download(tmp_path):
         )
     assert resp.status_code == 200
     html = resp.data.decode()
-    match = re.search(r"/download/(\d{8}_\d{6})", html)
+    match = re.search(r"/download/(\d{8}_\d{6}_[0-9a-f]{6})", html)
     assert match, "report page must contain a download link"
     assert "wrote <strong>283</strong> rows" in html
 
     dl = client.get(f"/download/{match.group(1)}")
     assert dl.status_code == 200
+    assert "ProductsList_" in dl.headers["Content-Disposition"]
     wb = load_workbook(io.BytesIO(dl.data))
     assert "Sheet1" in wb.sheetnames and "Unmatched" in wb.sheetnames
     assert wb["Sheet1"].max_row == 284
     wb.close()
 
-    # the query is now stored: a map-only run must also succeed
+    # the query is now stored: a map-only run must also succeed, and get
+    # its own run_id even within the same second (concurrent-run safety)
     page = client.get("/")
     assert b"Stored stock query" in page.data
     with MAP.open("rb") as m:
         resp = client.post("/process", data={"map_file": (m, "map.xlsx")},
                            content_type="multipart/form-data")
     assert resp.status_code == 200
+    second = re.search(r"/download/(\d{8}_\d{6}_[0-9a-f]{6})",
+                       resp.data.decode())
+    assert second and second.group(1) != match.group(1)
 
 
 def test_query_upload_with_wrong_headers_is_rejected(tmp_path):
@@ -302,3 +307,65 @@ def test_basic_auth_required_when_password_set(tmp_path):
     wrong = base64.b64encode(b"anyuser:nope").decode()
     assert client.get("/", headers={"Authorization": f"Basic {wrong}"}) \
         .status_code == 401
+
+
+def test_basic_auth_handles_non_ascii_passwords(tmp_path):
+    """compare_digest on str raises TypeError for non-ASCII — a login typo
+    must yield 401 and a non-ASCII APP_PASSWORD must still work, never 500."""
+    app = create_app(data_dir=tmp_path, password="Zürich2026")
+    client = app.test_client()
+    right = base64.b64encode("u:Zürich2026".encode()).decode()
+    assert client.get("/", headers={"Authorization": f"Basic {right}"}) \
+        .status_code == 200
+    wrong = base64.b64encode("u:pässword".encode()).decode()
+    assert client.get("/", headers={"Authorization": f"Basic {wrong}"}) \
+        .status_code == 401
+
+
+def test_corrupt_xml_map_gets_friendly_error(tmp_path):
+    """A valid zip with truncated sheet XML raises ElementTree.ParseError —
+    it must land on the friendly error page, not a bare 500."""
+    import zipfile as zf
+
+    src = Path(__file__).parent / "assets" / "ProductsListTemplate.xlsx"
+    corrupt = io.BytesIO()
+    with zf.ZipFile(src) as zin, zf.ZipFile(corrupt, "w") as zout:
+        for item in zin.infolist():
+            data = zin.read(item.filename)
+            if item.filename.startswith("xl/worksheets/"):
+                data = data[: len(data) // 2]
+            zout.writestr(item, data)
+    corrupt.seek(0)
+
+    app = create_app(data_dir=tmp_path, password="")
+    client = app.test_client()
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "query"
+    ws.append(pipeline.QUERY_HEADERS)
+    good_q = tmp_path / "q.xlsx"
+    wb.save(good_q)
+    with good_q.open("rb") as q:
+        resp = client.post(
+            "/process",
+            data={"map_file": (corrupt, "map.xlsx"), "query_file": (q, "q.xlsx")},
+            content_type="multipart/form-data",
+        )
+    assert resp.status_code == 400
+    assert b"could not be processed" in resp.data
+
+
+def test_indexed_color_fills_are_flagged_not_dropped(tmp_path):
+    """Legacy indexed-palette fills are outside the highlight definition but
+    must surface in 'other fills detected' instead of vanishing silently."""
+    wb = Workbook()
+    ws = wb.active
+    c = ws.cell(row=1, column=1, value="644T000A99X5800")
+    c.fill = PatternFill(fill_type="solid", start_color=Color(indexed=6))
+    path = tmp_path / "indexed.xlsx"
+    wb.save(path)
+    scan = pipeline.scan_sell_thru_map(path)
+    sheet = scan.sheets[0]
+    assert sheet.highlighted_cells == 0
+    assert len(sheet.other_fills) == 1
+    assert "indexed" in sheet.other_fills[0][2]
