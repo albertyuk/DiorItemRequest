@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}run report{% endblock %}
+{% block content %}
+  <p><a href="{{ url_for('index') }}">&larr; new run</a></p>
+
+  <div class="ok">
+    Processed <strong>{{ map_filename }}</strong> —
+    wrote <strong>{{ report.rows_written }}</strong> rows for
+    <strong>{{ report.matched_counts | length }}</strong> of
+    <strong>{{ report.bases | length }}</strong> highlighted base SKUs.
+  </div>
+  <p><a class="button" href="{{ url_for('download', run_id=run_id) }}">
+    Download {{ download_name }}</a></p>
+
+  <h2>Highlights per sheet</h2>
+  <table>
+    <tr><th>Sheet</th><th>SKU cells</th><th>Highlighted cells</th>
+        <th>Unique SKUs</th><th>Unique bases</th></tr>
+    {% for s in report.sheets %}
+      <tr><td>{{ s.name }}</td><td>{{ s.sku_cells }}</td>
+          <td>{{ s.highlighted_cells }}</td>
+          <td>{{ s.highlighted_skus | length }}</td>
+          <td>{{ s.bases | length }}</td></tr>
+    {% endfor %}
+  </table>
+
+  <h2>Matched bases ({{ report.matched_counts | length }})</h2>
+  {% if report.matched_counts %}
+    <table>
+      <tr><th>Base SKU</th><th>Query rows</th><th>Highlighted on</th></tr>
+      {% for base, count in report.matched_counts.items() %}
+        <tr><td>{{ base }}</td><td>{{ count }}</td>
+            <td>{{ report.bases[base] | join(", ") }}</td></tr>
+      {% endfor %}
+    </table>
+  {% else %}
+    <p class="muted">None.</p>
+  {% endif %}
+
+  <h2>Unmatched bases ({{ report.unmatched | length }})</h2>
+  {% if report.unmatched %}
+    <div class="warn">
+      These highlighted bases had <strong>no rows</strong> in the stored stock
+      query. They are also listed on the <code>Unmatched</code> sheet of the
+      output workbook.
+      <ul class="compact">
+        {% for base in report.unmatched %}
+          <li>{{ base }} <span class="muted">({{ report.bases[base] | join(", ") }})</span></li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% else %}
+    <p class="muted">None — every highlighted base matched at least one query row.</p>
+  {% endif %}
+
+  <h2>Other fills detected ({{ report.other_fills | length }})</h2>
+  {% if report.other_fills %}
+    <div class="warn">
+      These SKU cells carry a solid fill that is neither the yellow highlight
+      nor the structural banding (gray notes, etc.). They were <strong>not</strong>
+      extracted — please check them by hand.
+      <table>
+        <tr><th>Sheet</th><th>Cell</th><th>SKU</th><th>Fill</th></tr>
+        {% for sheet, coord, sku, note in report.other_fills %}
+          <tr><td>{{ sheet }}</td><td>{{ coord }}</td>
+              <td>{{ sku }}</td><td>{{ note }}</td></tr>
+        {% endfor %}
+      </table>
+    </div>
+  {% else %}
+    <p class="muted">None.</p>
+  {% endif %}
+{% endblock %}

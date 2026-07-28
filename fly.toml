@@ -1,0 +1,24 @@
+# fly.toml — Dior item request tool
+# Adjust `app` after `fly launch --no-deploy` if the name is taken.
+app = "dior-item-request"
+primary_region = "lhr"
+
+[build]
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[mounts]]
+  source = "data"
+  destination = "/data"
+
+[[vm]]
+  # Read-only parsing of the ~70 MB sell-thru map peaks well above the
+  # 256 MB default — do not lower this.
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1

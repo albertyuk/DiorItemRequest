@@ -1,0 +1,304 @@
+"""Acceptance tests against the real sample workbooks in ./samples/ plus
+generated fixtures for layouts the sample copy does not contain.
+
+The real samples hold internal pricing data and are not committed; tests that
+need them skip when ./samples/ is absent.
+"""
+
+from __future__ import annotations
+
+import base64
+import io
+import re
+from pathlib import Path
+
+import pytest
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Color, PatternFill
+
+import pipeline
+from app import create_app
+
+SAMPLES = Path(__file__).parent / "samples"
+MAP = SAMPLES / "sell_thru_map.xlsx"
+QUERY = SAMPLES / "query.xlsx"
+TEMPLATE = SAMPLES / "ProductsListTemplate.xlsx"
+
+needs_samples = pytest.mark.skipif(
+    not (MAP.exists() and QUERY.exists() and TEMPLATE.exists()),
+    reason="real sample workbooks not present in ./samples/",
+)
+
+
+@pytest.fixture(scope="session")
+def map_scan():
+    return pipeline.scan_sell_thru_map(MAP)
+
+
+@pytest.fixture(scope="session")
+def fw26_matched(map_scan):
+    fw26 = next(s for s in map_scan.sheets if s.name == "FW26")
+    return pipeline.match_query(QUERY, fw26.bases)
+
+
+# --- 1. highlight extraction counts ----------------------------------------
+
+@needs_samples
+def test_fw26_highlight_counts(map_scan):
+    fw26 = next(s for s in map_scan.sheets if s.name == "FW26")
+    assert fw26.highlighted_cells == 43
+    assert len(fw26.bases) == 41
+    # the structural theme-4 banding on size rows must never be flagged
+    assert fw26.other_fills == []
+
+
+@needs_samples
+def test_look_total_highlight_counts(map_scan):
+    lt = next((s for s in map_scan.sheets if s.name == "LOOK TOTAL"), None)
+    if lt is None:
+        pytest.skip(
+            "this sample copy of the map has no 'LOOK TOTAL' sheet "
+            "(only FW26 and an empty '-->' sheet); the block layout is "
+            "covered by test_look_total_block_layout_synthetic"
+        )
+    assert lt.highlighted_cells == 60
+    assert len(lt.bases) == 39
+
+
+def _yellow():
+    return PatternFill(fill_type="solid", start_color=Color(theme=7, tint=0.8))
+
+
+def test_look_total_block_layout_synthetic(tmp_path):
+    """Replicates the documented LOOK TOTAL geometry: 8-column look blocks
+    starting at A, J, S, AB, ... with SKUs under 'MMC' (block-relative col 3),
+    data from row 8; 60 highlighted cells over 46 unique SKUs / 39 bases,
+    plus gray-filled cells that must be flagged, not extracted."""
+    bases = [f"644T{i:03d}A99" for i in range(39)]
+    skus = [b + "X5800" for b in bases] + [b + "X0900" for b in bases[:7]]
+    assert len(set(skus)) == 46
+    highlight_cells = skus + skus[:14]  # 60 highlighted cells
+    plain_cells = [b + "X5800" for b in bases[:20]]
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "LOOK TOTAL"
+    block_cols = [3, 12, 21, 30, 39, 48, 57, 66]  # C, L, U, AD, AM, AV, BE, BN
+    for col in block_cols:
+        ws.cell(row=7, column=col, value="MMC")
+
+    slots = [(row, col) for row in range(8, 40) for col in block_cols]
+    it = iter(slots)
+    for sku in highlight_cells:
+        row, col = next(it)
+        c = ws.cell(row=row, column=col, value=sku)
+        c.fill = _yellow()
+    for sku in plain_cells:
+        row, col = next(it)
+        ws.cell(row=row, column=col, value=sku)
+    gray_specs = [(0, -0.15), (0, -0.15), (0, -0.15), (6, 0.8), (6, 0.8)]
+    for i, (theme, tint) in enumerate(gray_specs):
+        row, col = next(it)
+        c = ws.cell(row=row, column=col, value=bases[20 + i] + "X5800")
+        c.fill = PatternFill(fill_type="solid",
+                             start_color=Color(theme=theme, tint=tint))
+    # structural banding (theme 4) must be silently ignored
+    row, col = next(it)
+    c = ws.cell(row=row, column=col, value=bases[30] + "X5800")
+    c.fill = PatternFill(fill_type="solid",
+                         start_color=Color(theme=4, tint=0.8))
+
+    path = tmp_path / "look_total.xlsx"
+    wb.save(path)
+
+    scan = pipeline.scan_sell_thru_map(path)
+    lt = next(s for s in scan.sheets if s.name == "LOOK TOTAL")
+    assert lt.highlighted_cells == 60
+    assert len(lt.highlighted_skus) == 46
+    assert len(lt.bases) == 39
+    grays = [note for _, _, note in lt.other_fills]
+    assert len(grays) == 5
+    assert all(note.startswith("theme") for note in grays)
+
+
+def test_rgb_yellow_fallback(tmp_path):
+    """A future map that uses literal RGB yellows must still be detected."""
+    wb = Workbook()
+    ws = wb.active
+    c = ws.cell(row=1, column=1, value="644T000A99X5800")
+    c.fill = PatternFill(fill_type="solid", start_color="FFFFF2CC")
+    path = tmp_path / "rgb.xlsx"
+    wb.save(path)
+    scan = pipeline.scan_sell_thru_map(path)
+    assert scan.sheets[0].highlighted_cells == 1
+
+
+# --- 2. base-SKU extraction -------------------------------------------------
+
+def test_base_extraction_double_x():
+    assert pipeline.extract_base("652P92X3F74X8090") == "652P92X3F74"
+    assert re.sub(r"X[0-9A-Z]{4}$", "", "652P92X3F74X8090") == "652P92X3F74"
+    assert pipeline.extract_base("644S83A7A26X5883") == "644S83A7A26"
+    assert pipeline.extract_base("  644S83A7A26X5883 ") == "644S83A7A26"
+
+
+# --- 3. query matching ------------------------------------------------------
+
+@needs_samples
+def test_every_fw26_base_matches_query(map_scan, fw26_matched):
+    fw26 = next(s for s in map_scan.sheets if s.name == "FW26")
+    assert set(fw26_matched) == fw26.bases  # every base has >= 1 row
+    assert all(len(rows) >= 1 for rows in fw26_matched.values())
+    total = sum(len(rows) for rows in fw26_matched.values())
+    assert total == 283  # measured on the sample files ("~283" in the spec)
+
+
+def test_match_is_exact_first_segment(tmp_path):
+    """'644S16B7E7' must not prefix-match '644S16B7E72 - ...'."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "query"
+    ws.append(pipeline.QUERY_HEADERS)
+    ws.append(["1", "644S16B7E72 - X4804 - T36", "d", "dep", "s",
+               None, None, None, 1, 10, 20, "t", "p"])
+    path = tmp_path / "q.xlsx"
+    wb.save(path)
+    assert pipeline.match_query(path, {"644S16B7E7"}) == {}
+    assert list(pipeline.match_query(path, {"644S16B7E72"})) == ["644S16B7E72"]
+
+
+# --- 4. output workbook -----------------------------------------------------
+
+@needs_samples
+def test_output_workbook_structure(tmp_path, fw26_matched):
+    out = tmp_path / "out.xlsx"
+    rows_written = pipeline.build_output(
+        TEMPLATE, out, fw26_matched,
+        unmatched_bases=["FAKEBASE001"],
+        base_sheets={"FAKEBASE001": ["LOOK TOTAL"]},
+    )
+    assert rows_written == 283
+
+    wb = load_workbook(out)
+    ws = wb["Sheet1"]
+    twb = load_workbook(TEMPLATE)
+    assert [c.value for c in ws[1]] == [c.value for c in twb["Sheet1"][1]]
+    twb.close()
+
+    last = rows_written + 1
+    for n in (2, 3, last):
+        assert ws.cell(row=n, column=8).value == \
+            f'=IF(AND(F{n}<>"", G{n}<>""), F{n}*G{n}, "")'
+        assert ws.cell(row=n, column=10).value == \
+            f'=IF(AND(F{n}<>"", I{n}<>""), F{n}*I{n}, "")'
+        for col in (11, 12, 13):  # K, L, M stay blank
+            assert ws.cell(row=n, column=col).value is None
+        barcode = ws.cell(row=n, column=1)
+        assert isinstance(barcode.value, str)
+        assert barcode.number_format == "@"
+
+    # sorted by base, then color, then size
+    skus = [ws.cell(row=n, column=2).value for n in range(2, last + 1)]
+    keys = [tuple(s.split(" - ")) for s in skus]
+    assert keys == sorted(keys)
+
+    um = wb["Unmatched"]
+    assert um["A1"].value == "Base SKU"
+    assert um["A2"].value == "FAKEBASE001"
+    assert um["B2"].value == "LOOK TOTAL"
+    wb.close()
+
+
+# --- 5. Flask end-to-end ----------------------------------------------------
+
+@needs_samples
+def test_end_to_end_upload_and_download(tmp_path):
+    app = create_app(data_dir=tmp_path, password="")
+    client = app.test_client()
+
+    page = client.get("/")
+    assert page.status_code == 200
+    assert b"No stock query export stored yet" in page.data
+
+    with MAP.open("rb") as m, QUERY.open("rb") as q:
+        resp = client.post(
+            "/process",
+            data={"map_file": (m, "map.xlsx"), "query_file": (q, "query.xlsx")},
+            content_type="multipart/form-data",
+        )
+    assert resp.status_code == 200
+    html = resp.data.decode()
+    match = re.search(r"/download/(\d{8}_\d{6})", html)
+    assert match, "report page must contain a download link"
+    assert "wrote <strong>283</strong> rows" in html
+
+    dl = client.get(f"/download/{match.group(1)}")
+    assert dl.status_code == 200
+    wb = load_workbook(io.BytesIO(dl.data))
+    assert "Sheet1" in wb.sheetnames and "Unmatched" in wb.sheetnames
+    assert wb["Sheet1"].max_row == 284
+    wb.close()
+
+    # the query is now stored: a map-only run must also succeed
+    page = client.get("/")
+    assert b"Stored stock query" in page.data
+    with MAP.open("rb") as m:
+        resp = client.post("/process", data={"map_file": (m, "map.xlsx")},
+                           content_type="multipart/form-data")
+    assert resp.status_code == 200
+
+
+def test_query_upload_with_wrong_headers_is_rejected(tmp_path):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "query"
+    ws.append(["Totally", "Wrong", "Headers"])
+    bad = tmp_path / "bad_query.xlsx"
+    wb.save(bad)
+
+    ok, message, _ = pipeline.validate_query_file(bad)
+    assert not ok and "header" in message
+
+    app = create_app(data_dir=tmp_path / "data", password="")
+    client = app.test_client()
+    with bad.open("rb") as b, bad.open("rb") as m:
+        resp = client.post(
+            "/process",
+            data={"map_file": (m, "map.xlsx"), "query_file": (b, "q.xlsx")},
+            content_type="multipart/form-data",
+        )
+    assert resp.status_code == 400
+    assert b"rejected" in resp.data
+
+
+def test_malformed_map_upload_is_a_friendly_error(tmp_path):
+    app = create_app(data_dir=tmp_path, password="")
+    client = app.test_client()
+    # store a minimal valid query first
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "query"
+    ws.append(pipeline.QUERY_HEADERS)
+    good_q = tmp_path / "q.xlsx"
+    wb.save(good_q)
+    with good_q.open("rb") as q:
+        resp = client.post(
+            "/process",
+            data={"map_file": (io.BytesIO(b"this is not a zip"), "map.xlsx"),
+                  "query_file": (q, "q.xlsx")},
+            content_type="multipart/form-data",
+        )
+    assert resp.status_code == 400
+    assert b"could not be processed" in resp.data
+
+
+def test_basic_auth_required_when_password_set(tmp_path):
+    app = create_app(data_dir=tmp_path, password="s3cret")
+    client = app.test_client()
+    assert client.get("/").status_code == 401
+    token = base64.b64encode(b"anyuser:s3cret").decode()
+    assert client.get("/", headers={"Authorization": f"Basic {token}"}) \
+        .status_code == 200
+    wrong = base64.b64encode(b"anyuser:nope").decode()
+    assert client.get("/", headers={"Authorization": f"Basic {wrong}"}) \
+        .status_code == 401

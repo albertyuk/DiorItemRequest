@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dior item request — {% block title %}{% endblock %}</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+           max-width: 46rem; margin: 2rem auto; padding: 0 1rem;
+           color: #1a1a1a; line-height: 1.5; }
+    h1 { font-size: 1.4rem; }
+    h2 { font-size: 1.1rem; margin-top: 1.8rem; }
+    table { border-collapse: collapse; width: 100%; margin: .6rem 0; }
+    th, td { border: 1px solid #ccc; padding: .3rem .55rem; text-align: left;
+             font-size: .92rem; }
+    th { background: #f4f4f4; }
+    .muted { color: #666; font-size: .9rem; }
+    .warn { background: #fff3cd; border: 1px solid #e0c76b;
+            padding: .6rem .8rem; border-radius: 4px; }
+    .ok { background: #e7f5e7; border: 1px solid #9fce9f;
+          padding: .6rem .8rem; border-radius: 4px; }
+    .error { background: #fdecea; border: 1px solid #e5a09a;
+             padding: .6rem .8rem; border-radius: 4px; }
+    form.run label { display: block; margin: 1rem 0 .25rem; font-weight: 600; }
+    button { font-size: 1rem; padding: .5rem 1.4rem; margin-top: 1.2rem;
+             cursor: pointer; }
+    button:disabled { cursor: wait; opacity: .6; }
+    #spinner { display: none; margin-top: .8rem; }
+    code { background: #f4f4f4; padding: .1rem .3rem; border-radius: 3px; }
+    a.button { display: inline-block; background: #1a5c1a; color: #fff;
+               padding: .55rem 1.3rem; border-radius: 4px;
+               text-decoration: none; margin: .6rem 0; }
+    ul.compact { margin: .3rem 0; padding-left: 1.3rem; }
+  </style>
+</head>
+<body>
+  <h1>Dior item request — highlighted-SKU extractor</h1>
+  {% block content %}{% endblock %}
+</body>
+</html>

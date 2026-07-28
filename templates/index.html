@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}upload{% endblock %}
+{% block content %}
+  <p class="muted">Extracts yellow-highlighted (reorder) SKUs from a sell-thru
+  map, looks up all color/size variants in the stored stock query export, and
+  produces a filled ProductsList workbook.</p>
+
+  {% if query_meta %}
+    <div class="ok">
+      Stored stock query: <strong>{{ query_meta.filename }}</strong>
+      &mdash; {{ "{:,}".format(query_meta.rows) }} rows,
+      uploaded {{ query_meta.uploaded_at }}.
+    </div>
+  {% else %}
+    <div class="warn">
+      <strong>No stock query export stored yet.</strong> Upload one below —
+      it is kept for future runs until replaced.
+    </div>
+  {% endif %}
+
+  <form class="run" action="{{ url_for('process') }}" method="post"
+        enctype="multipart/form-data"
+        onsubmit="document.getElementById('go').disabled = true;
+                  document.getElementById('spinner').style.display = 'block';">
+    <label for="map_file">Sell-thru map (.xlsx) — required each run</label>
+    <input type="file" id="map_file" name="map_file" accept=".xlsx" required>
+
+    <label for="query_file">Stock query export (.xlsx) — optional,
+      replaces the stored one</label>
+    <input type="file" id="query_file" name="query_file" accept=".xlsx">
+
+    <button id="go" type="submit">Process</button>
+    <p id="spinner" class="muted">&#9203; Processing&hellip; parsing a large
+      map takes up to a minute or two. Leave this page open.</p>
+  </form>
+{% endblock %}

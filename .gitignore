@@ -1,0 +1,7 @@
+# Real sample workbooks contain internal pricing data — keep them out of git.
+# Tests skip automatically when samples/ is absent.
+samples/
+data/
+__pycache__/
+*.pyc
+.pytest_cache/
