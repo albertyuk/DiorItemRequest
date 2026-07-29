@@ -7,7 +7,6 @@ need them skip when ./samples/ is absent.
 
 from __future__ import annotations
 
-import base64
 import io
 import re
 import time
@@ -20,12 +19,7 @@ from openpyxl.styles import Color, PatternFill
 import column_memory
 import pipeline
 import sku_locator
-from app import create_app, parse_users
-
-
-def _basic(user, password):
-    token = base64.b64encode(f"{user}:{password}".encode()).decode()
-    return {"Authorization": f"Basic {token}"}
+from app import create_app
 
 SAMPLES = Path(__file__).parent / "samples"
 MAP = SAMPLES / "sell_thru_map.xlsx"
@@ -318,7 +312,7 @@ def _verification_app(tmp_path, monkeypatch, detection):
     monkeypatch.setattr(sku_locator, "is_configured", lambda: True)
     monkeypatch.setattr(sku_locator, "locate_from_previews",
                         lambda previews: detection)
-    app = create_app(data_dir=tmp_path / "data", password="")
+    app = create_app(data_dir=tmp_path / "data", open_access=True)
     map_path = tmp_path / "track.xlsx"
     _track_workbook(map_path)
     qwb = Workbook()
@@ -471,7 +465,7 @@ def test_column_memory_flow(tmp_path, monkeypatch):
 
     monkeypatch.setattr(sku_locator, "is_configured", lambda: True)
     monkeypatch.setattr(sku_locator, "locate_from_previews", fake_locate)
-    app = create_app(data_dir=tmp_path / "data", password="")
+    app = create_app(data_dir=tmp_path / "data", open_access=True)
     client = app.test_client()
     map_path = tmp_path / "track.xlsx"
     _track_workbook(map_path)
@@ -522,7 +516,7 @@ def test_memory_survives_ai_failure(tmp_path, monkeypatch):
 
     monkeypatch.setattr(sku_locator, "is_configured", lambda: True)
     monkeypatch.setattr(sku_locator, "locate_from_previews", fake_locate)
-    app = create_app(data_dir=tmp_path / "data", password="")
+    app = create_app(data_dir=tmp_path / "data", open_access=True)
     client = app.test_client()
     map_path = tmp_path / "track.xlsx"
     _track_workbook(map_path)
@@ -566,28 +560,39 @@ def test_memory_survives_ai_failure(tmp_path, monkeypatch):
 
 
 def test_named_users_auth_and_identity(tmp_path, monkeypatch):
-    """Per-person logins; runs record who uploaded and who built."""
-    assert parse_users("albert:pw1, vivian:pw2,, bad, x:") == \
-        {"albert": "pw1", "vivian": "pw2"}
-    assert parse_users("a:p:w")["a"] == "p:w"  # colon allowed in password
-    # stray whitespace around the colon must not poison the password
-    assert parse_users("albert : pw1 ") == {"albert": "pw1"}
-
+    """Per-person session logins; runs record who uploaded and who built."""
     detection = [{"sheet": "Track", "header_row": 1,
                   "sku_columns": [{"column": "A", "header": "SKU",
                                    "reason": "codes"}]}]
     monkeypatch.setattr(sku_locator, "is_configured", lambda: True)
     monkeypatch.setattr(sku_locator, "locate_from_previews",
                         lambda previews: detection)
-    app = create_app(data_dir=tmp_path / "data", password="",
-                     users={"Albert": "pw1", "vivian": "pw2"})
-    client = app.test_client()
-
-    assert client.get("/").status_code == 401
-    assert client.get("/", headers=_basic("albert", "wrong")).status_code == 401
-    assert client.get("/", headers=_basic("stranger", "pw1")).status_code == 401
+    app = create_app(data_dir=tmp_path / "data", setup_code="root-code",
+                     secret="s" * 64, cookie_secure=False)
+    albert = app.test_client()
+    # bootstrap the admin account (the display name feeds the report)
+    r = albert.post("/setup", data={"code": "root-code", "username": "albert",
+                                    "password": "pw1secret",
+                                    "display": "Albert"})
+    assert r.status_code == 303
+    assert albert.get("/").status_code == 200
+    # anonymous requests bounce to login now that a user exists
+    anon = app.test_client()
+    r = anon.get("/")
+    assert r.status_code == 303 and r.headers["Location"].endswith("/login")
+    # albert adds vivian with an initial password (manual path)
+    r = albert.post("/team/add", data={"username": "vivian",
+                                       "password": "pw2secret"})
+    assert "msg_user_added" in r.headers["Location"]
+    vivian = app.test_client()
+    assert vivian.post("/login", data={"username": "vivian",
+                                       "password": "wrong-pass"}
+                       ).status_code == 401
     # correct login, case-insensitive username
-    assert client.get("/", headers=_basic("ALBERT", "pw1")).status_code == 200
+    r = vivian.post("/login", data={"username": "VIVIAN",
+                                    "password": "pw2secret"})
+    assert r.status_code == 303
+    assert vivian.get("/").status_code == 200
 
     map_path = tmp_path / "track.xlsx"
     _track_workbook(map_path)
@@ -600,46 +605,27 @@ def test_named_users_auth_and_identity(tmp_path, monkeypatch):
 
     # albert uploads; vivian reviews and builds
     with map_path.open("rb") as m, query_path.open("rb") as q:
-        resp = client.post(
+        resp = albert.post(
             "/process",
             data={"map_file": (m, "t.xlsx"), "query_file": (q, "q.xlsx")},
-            content_type="multipart/form-data",
-            headers=_basic("albert", "pw1"))
+            content_type="multipart/form-data")
     assert resp.status_code == 302
     job = resp.headers["Location"].rsplit("/", 1)[-1]
     while True:
-        d = client.get(f"/progress/{job}/status",
-                       headers=_basic("albert", "pw1")).get_json()
+        d = albert.get(f"/progress/{job}/status").get_json()
         if d["status"] != "running":
             break
         time.sleep(0.2)
-    html = client.get(d["next"], headers=_basic("vivian", "pw2")).data.decode()
+    html = vivian.get(d["next"]).data.decode()
     skus = re.findall(r'name="sku" value="([^"]+)"', html)
     build = re.search(r'action="(/review/[0-9_a-f]+/build)"', html).group(1)
-    resp = client.post(build, data={"sku": skus},
-                       headers=_basic("vivian", "pw2"), follow_redirects=True)
+    resp = vivian.post(build, data={"sku": skus}, follow_redirects=True)
     html = resp.data.decode()
-    assert "Uploaded by Albert" in html          # canonical casing
+    assert "Uploaded by Albert" in html          # display name, not username
     assert "Reviewed &amp; built by vivian" in html
     # the recent-runs list names the builder too
-    index = client.get("/", headers=_basic("albert", "pw1")).data.decode()
+    index = albert.get("/").data.decode()
     assert "vivian" in index
-
-
-def test_shared_password_cannot_impersonate_named_user(tmp_path):
-    """With both APP_USERS and APP_PASSWORD set, the shared password signs
-    in any NEW name but never a configured user's — the run history would
-    otherwise be forgeable."""
-    app = create_app(data_dir=tmp_path / "data", password="shared",
-                     users={"Albert": "pw1"})
-    client = app.test_client()
-    # a named user with their own password: fine
-    assert client.get("/", headers=_basic("albert", "pw1")).status_code == 200
-    # anyone else with the shared password: fine, identity as typed
-    assert client.get("/", headers=_basic("guest", "shared")).status_code == 200
-    # the shared password must NOT work under a configured user's name
-    assert client.get("/", headers=_basic("albert", "shared")).status_code == 401
-    assert client.get("/", headers=_basic("ALBERT", "shared")).status_code == 401
 
 
 def test_review_build_uses_rows_matched_at_scan_time(tmp_path, monkeypatch):
@@ -769,7 +755,7 @@ def test_output_workbook_structure(tmp_path, fw26_matched):
 
 @needs_samples
 def test_end_to_end_upload_and_download(tmp_path):
-    app = create_app(data_dir=tmp_path, password="")
+    app = create_app(data_dir=tmp_path, open_access=True)
     client = app.test_client()
 
     page = client.get("/")
@@ -866,7 +852,7 @@ def test_query_upload_with_wrong_headers_is_rejected(tmp_path):
     ok, message, _ = pipeline.validate_query_file(bad)
     assert not ok and "header" in message
 
-    app = create_app(data_dir=tmp_path / "data", password="")
+    app = create_app(data_dir=tmp_path / "data", open_access=True)
     client = app.test_client()
     with bad.open("rb") as b, bad.open("rb") as m:
         resp = client.post(
@@ -879,7 +865,7 @@ def test_query_upload_with_wrong_headers_is_rejected(tmp_path):
 
 
 def test_malformed_map_upload_is_a_friendly_error(tmp_path):
-    app = create_app(data_dir=tmp_path, password="")
+    app = create_app(data_dir=tmp_path, open_access=True)
     client = app.test_client()
     # store a minimal valid query first
     wb = Workbook()
@@ -899,20 +885,29 @@ def test_malformed_map_upload_is_a_friendly_error(tmp_path):
     assert b"could not be processed" in resp.data
 
 
-def test_basic_auth_required_when_password_set(tmp_path):
-    app = create_app(data_dir=tmp_path, password="s3cret")
+def test_session_required_when_setup_code_set(tmp_path):
+    app = create_app(data_dir=tmp_path, setup_code="root-code",
+                     secret="s" * 64, cookie_secure=False)
     client = app.test_client()
-    assert client.get("/").status_code == 401
-    token = base64.b64encode(b"anyuser:s3cret").decode()
-    assert client.get("/", headers={"Authorization": f"Basic {token}"}) \
-        .status_code == 200
-    wrong = base64.b64encode(b"anyuser:nope").decode()
-    assert client.get("/", headers={"Authorization": f"Basic {wrong}"}) \
-        .status_code == 401
+    # zero users: anonymous requests bounce to first-run setup
+    r = client.get("/")
+    assert r.status_code == 303 and r.headers["Location"].endswith("/setup")
+    r = client.post("/setup", data={"code": "root-code", "username": "boss",
+                                    "password": "longenough"})
+    assert r.status_code == 303
+    assert client.get("/").status_code == 200
+    # the setup code is NOT a login password
+    fresh = app.test_client()
+    assert fresh.post("/login", data={"username": "boss",
+                                      "password": "root-code"}
+                      ).status_code == 401
+    assert fresh.post("/login", data={"username": "boss",
+                                      "password": "longenough"}
+                      ).status_code == 303
 
 
 def test_language_toggle_and_cookie(tmp_path):
-    app = create_app(data_dir=tmp_path, password="")
+    app = create_app(data_dir=tmp_path, open_access=True)
     client = app.test_client()
 
     # default is English, with a top-left switch offering Chinese
@@ -945,7 +940,7 @@ def test_language_toggle_and_cookie(tmp_path):
 
 
 def test_help_page_in_both_languages(tmp_path):
-    app = create_app(data_dir=tmp_path, password="")
+    app = create_app(data_dir=tmp_path, open_access=True)
     client = app.test_client()
 
     # linked from the front page
@@ -963,21 +958,9 @@ def test_help_page_in_both_languages(tmp_path):
     assert "筛选" in zh
 
     # help is behind auth like everything else
-    locked = create_app(data_dir=tmp_path / "locked", password="pw")
-    assert locked.test_client().get("/help").status_code == 401
-
-
-def test_basic_auth_handles_non_ascii_passwords(tmp_path):
-    """compare_digest on str raises TypeError for non-ASCII — a login typo
-    must yield 401 and a non-ASCII APP_PASSWORD must still work, never 500."""
-    app = create_app(data_dir=tmp_path, password="Zürich2026")
-    client = app.test_client()
-    right = base64.b64encode("u:Zürich2026".encode()).decode()
-    assert client.get("/", headers={"Authorization": f"Basic {right}"}) \
-        .status_code == 200
-    wrong = base64.b64encode("u:pässword".encode()).decode()
-    assert client.get("/", headers={"Authorization": f"Basic {wrong}"}) \
-        .status_code == 401
+    locked = create_app(data_dir=tmp_path / "locked", setup_code="pw",
+                        cookie_secure=False)
+    assert locked.test_client().get("/help").status_code == 303
 
 
 def test_corrupt_xml_map_gets_friendly_error(tmp_path):
@@ -995,7 +978,7 @@ def test_corrupt_xml_map_gets_friendly_error(tmp_path):
             zout.writestr(item, data)
     corrupt.seek(0)
 
-    app = create_app(data_dir=tmp_path, password="")
+    app = create_app(data_dir=tmp_path, open_access=True)
     client = app.test_client()
     wb = Workbook()
     ws = wb.active
@@ -1019,7 +1002,7 @@ def test_corrupt_xml_map_gets_friendly_error(tmp_path):
 def test_xhr_submission_gets_json_contract(tmp_path):
     """The upload-progress path posts with XHR and expects JSON back:
     {'next': url} on success, {'error': message} on failure."""
-    app = create_app(data_dir=tmp_path, password="")
+    app = create_app(data_dir=tmp_path, open_access=True)
     client = app.test_client()
     xhr = {"X-Requested-With": "XMLHttpRequest"}
 

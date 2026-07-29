@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}{{ t('auth_forgot_title') }}{% endblock %}
+{% block content %}
+  <div class="card" style="max-width:26rem;margin:0 auto">
+    <h2>{{ t('auth_forgot_title') }}</h2>
+    {% if sent %}
+      <div class="ok">{{ t('auth_forgot_sent') }}</div>
+    {% elif not email_on %}
+      <div class="warn">{{ t('auth_forgot_disabled') }}</div>
+    {% else %}
+      <p class="muted">{{ t('auth_forgot_intro') }}</p>
+      <form method="post" class="run" action="{{ url_for('auth.forgot_page') }}">
+        <label for="email">{{ t('auth_forgot_email') }}</label>
+        <input id="email" name="email" type="email" required autofocus>
+        <p><button type="submit">{{ t('auth_forgot_btn') }}</button></p>
+      </form>
+    {% endif %}
+    <p class="muted"><a href="{{ url_for('auth.login_page') }}">{{ t('auth_go_login') }}</a></p>
+  </div>
+{% endblock %}

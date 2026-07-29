@@ -4,7 +4,6 @@ workbook. See pipeline.py for the extraction/matching logic."""
 
 from __future__ import annotations
 
-import hmac
 import json
 import logging
 import os
@@ -17,15 +16,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import (
-    Flask, Response, abort, g, redirect, render_template, request, send_file,
-    url_for,
+    Flask, abort, g, redirect, render_template, request, send_file, url_for,
 )
 from werkzeug.exceptions import RequestEntityTooLarge
 
+import auth
+import auth_routes
 import column_memory
 import pipeline
 import sku_locator
-from translations import STRINGS, SUPPORTED_LANGS
+from translations import SUPPORTED_LANGS, translate
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger("app")
@@ -38,23 +38,6 @@ MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 
 def _new_id() -> str:
     return f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
-
-
-def parse_users(raw: str) -> dict[str, str]:
-    """APP_USERS='albert:pw1,vivian:pw2' -> {'albert': 'pw1', ...}.
-    Passwords may contain ':'; malformed entries are skipped loudly."""
-    users: dict[str, str] = {}
-    for pair in raw.split(","):
-        pair = pair.strip()
-        if not pair:
-            continue
-        name, sep, password = pair.partition(":")
-        name, password = name.strip(), password.strip()
-        if not sep or not name or not password:
-            log.warning("ignoring malformed APP_USERS entry %r…", pair[:12])
-            continue
-        users[name] = password
-    return users
 
 
 def report_to_dict(report: "pipeline.RunReport", map_filename: str,
@@ -94,21 +77,36 @@ def default_data_dir() -> Path:
 
 
 def create_app(data_dir: Path | str | None = None,
-               password: str | None = None,
-               users: dict[str, str] | None = None) -> Flask:
+               setup_code: str | None = None,
+               open_access: bool | None = None,
+               secret: str | None = None,
+               cookie_secure: bool | None = None) -> Flask:
     data_dir = Path(data_dir) if data_dir else default_data_dir()
-    if password is None:
-        password = os.environ.get("APP_PASSWORD", "")
-    if users is None:
-        users = parse_users(os.environ.get("APP_USERS", ""))
-    if os.environ.get("FLY_APP_NAME") and not (password or users):
-        # This tool handles internal pricing data; it must never sit on a
-        # public URL unauthenticated.
+    env_configured = setup_code is None
+    if setup_code is None:
+        # APP_PASSWORD is the *setup code*: it creates or recovers the admin
+        # account at /setup — nobody logs in with it day-to-day.
+        setup_code = os.environ.get("APP_PASSWORD", "")
+    if open_access is None:
+        open_access = os.environ.get(
+            "ALLOW_OPEN_ACCESS", "").lower() in ("1", "true", "yes")
+    if cookie_secure is None:
+        cookie_secure = os.environ.get("SESSION_COOKIE_SECURE", "1") != "0"
+    if env_configured and not setup_code and not open_access:
+        # Fail startup validation on any environment-driven boot (this tool
+        # fronts internal pricing data); the session gate independently
+        # fails closed with 503 as a second layer. Programmatic callers
+        # (tests) may pass setup_code="" explicitly to build an
+        # unconfigured app.
         raise RuntimeError(
-            "Neither APP_USERS nor APP_PASSWORD is set. Refusing to start "
-            "unauthenticated in production — run: fly secrets set "
-            "APP_USERS='name:password,name2:password2' (or APP_PASSWORD=...)"
+            "APP_PASSWORD (the setup code) is not set. Refusing to start "
+            "unauthenticated — set APP_PASSWORD=<setup-code> (on Fly: "
+            "fly secrets set APP_PASSWORD=...), or ALLOW_OPEN_ACCESS=1 "
+            "for a local no-auth run."
         )
+    if os.environ.get("APP_USERS"):
+        log.warning("APP_USERS is no longer used — accounts now live in the "
+                    "app: create the admin at /setup, coworkers on /team.")
 
     outputs_dir = data_dir / "outputs"
     tmp_dir = data_dir / "tmp"
@@ -120,8 +118,22 @@ def create_app(data_dir: Path | str | None = None,
     for d in (data_dir, outputs_dir, tmp_dir, pending_dir):
         d.mkdir(parents=True, exist_ok=True)
 
+    auth_ctx = auth.AuthContext(
+        db=auth.AuthDB(data_dir / "auth.db"),
+        throttle=auth.Throttle(),
+        setup_code=setup_code,
+        open_access=open_access,
+        secret=auth.load_secret(data_dir, secret),
+        cookie_secure=cookie_secure,
+        invite_ttl_hours=int(os.environ.get("INVITE_TTL_HOURS", "72")),
+        reset_ttl_hours=int(os.environ.get("RESET_TTL_HOURS", "2")),
+        public_base_url=os.environ.get("PUBLIC_BASE_URL", "").rstrip("/"),
+    )
+
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
+    app.extensions["auth"] = auth_ctx
+    app.register_blueprint(auth_routes.bp)
 
     # --- helpers ------------------------------------------------------------
 
@@ -147,9 +159,7 @@ def create_app(data_dir: Path | str | None = None,
             stale.unlink(missing_ok=True)
 
     def tr(key: str, **fmt) -> str:
-        lang = getattr(g, "lang", "en")
-        s = STRINGS.get(lang, STRINGS["en"]).get(key) or STRINGS["en"][key]
-        return s.format(**fmt) if fmt else s
+        return translate(getattr(g, "lang", "en"), key, **fmt)
 
     def prune_drafts() -> None:
         files = sorted(pending_dir.glob("draft_*.json"),
@@ -308,41 +318,48 @@ def create_app(data_dir: Path | str | None = None,
     def inject_i18n():
         return {"t": tr, "lang": getattr(g, "lang", "en")}
 
-    # --- auth ---------------------------------------------------------------
+    # --- auth: the session gate (spec §5) -----------------------------------
+
+    PUBLIC_EXACT = {"/healthz", "/login", "/setup", "/forgot"}
+    # Token prefixes must be public: those links arrive by email, before
+    # the visitor has any session.
+    PUBLIC_PREFIXES = ("/static/", "/invite/", "/reset/", "/verify/")
 
     @app.before_request
-    def require_auth():
-        if not password and not users:
-            g.user = ""  # local development: open access, anonymous
+    def session_gate():
+        g.account = None
+        g.username = ""
+        g.user = ""
+        g.is_admin = False
+        # Load the identity even on public paths (the nav shows it).
+        if auth_ctx.setup_code or auth_ctx.db.user_count():
+            user = auth.resolve_session(
+                auth_ctx, request.cookies.get(auth.SESSION_COOKIE))
+            if user is not None:
+                g.account = user
+                g.username = user["username"]
+                g.user = user["display"] or user["username"]
+                g.is_admin = bool(user["is_admin"])
+        path = request.path
+        if path in PUBLIC_EXACT or path.startswith(PUBLIC_PREFIXES):
             return None
-        auth = request.authorization
-        # Compare as bytes: compare_digest on str rejects non-ASCII input
-        # with a TypeError, which would turn a login typo into a 500.
-        if auth and auth.type == "basic" and auth.password:
-            typed = (auth.username or "").strip()
-            for name, user_password in users.items():
-                if (name.lower() == typed.lower()
-                        and hmac.compare_digest(
-                            auth.password.encode("utf-8"),
-                            user_password.encode("utf-8"))):
-                    g.user = name  # canonical casing from the config
-                    return None
-            # Shared-password fallback: any name EXCEPT a configured user's
-            # — otherwise the shared password could sign someone in AS a
-            # named colleague and forge the run history.
-            if (password
-                    and typed.lower() not in (n.lower() for n in users)
-                    and hmac.compare_digest(
-                        auth.password.encode("utf-8"),
-                        password.encode("utf-8"))):
-                g.user = typed  # name as typed
-                return None
-        return Response(
-            "Authentication required.", 401,
-            {"WWW-Authenticate": 'Basic realm="Dior item request"'},
-        )
+        if not auth_ctx.setup_code:
+            if auth_ctx.open_access:
+                return None  # explicit local no-auth opt-out: anonymous
+            # Fail closed even if startup validation was somehow bypassed.
+            return error_page("err_auth_unconfigured", 503)
+        if g.account is not None:
+            return None
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return {"error": tr("err_session_expired")}, 401
+        target = ("/setup" if auth_ctx.db.user_count() == 0 else "/login")
+        return redirect(target, code=303)
 
     # --- routes -------------------------------------------------------------
+
+    @app.get("/healthz")
+    def healthz():
+        return {"status": "ok"}
 
     @app.get("/")
     def index():

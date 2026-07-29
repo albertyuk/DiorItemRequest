@@ -12,6 +12,12 @@ Technical error details (exception text) are appended untranslated.
 
 SUPPORTED_LANGS = ("en", "zh")
 
+
+def translate(lang: str, key: str, **fmt) -> str:
+    """Shared lookup used by both app.py and auth_routes.py."""
+    s = STRINGS.get(lang, STRINGS["en"]).get(key) or STRINGS["en"][key]
+    return s.format(**fmt) if fmt else s
+
 STRINGS = {
     "en": {
         "site_title": "Dior item request — highlighted-SKU extractor",
@@ -180,6 +186,135 @@ STRINGS = {
                              "them by hand."),
         "th_fill": "Fill",
 
+        # auth: login / setup / forgot
+        "auth_login_title": "Log in",
+        "auth_username": "Username",
+        "auth_password": "Password",
+        "auth_login_btn": "Log in",
+        "auth_login_failed": "Wrong username or password.",
+        "auth_throttled": ("Too many attempts — wait {n} seconds, then try "
+                           "again."),
+        "auth_login_hint": ("Accounts are created by an admin on the Team "
+                            "page. No account yet? Ask an admin to invite "
+                            "you."),
+        "auth_login_setup_link": ("Create the admin account (needs the setup "
+                                  "code)"),
+        "auth_login_forgot_link": "Forgot your password?",
+        "auth_setup_title": "Admin setup",
+        "auth_setup_hint": ("This page creates — or recovers — the admin "
+                            "account, using the server's setup code. An "
+                            "existing account is reset to the password you "
+                            "enter here; fields left blank keep their "
+                            "current values."),
+        "auth_setup_code": "Setup code",
+        "auth_setup_display": "Display name (optional)",
+        "auth_setup_email": "Email (optional — enables password reset)",
+        "auth_setup_btn": "Create admin account",
+        "auth_setup_wrong_code": "Wrong setup code.",
+        "auth_setup_disabled": ("Setup is unavailable — no setup code is "
+                                "configured on the server."),
+        "auth_bad_username": ("Usernames are 2–32 characters — lowercase "
+                              "letters, digits, dots, dashes or "
+                              "underscores, starting with a letter or "
+                              "digit."),
+        "auth_bad_password": "Passwords need at least 8 characters.",
+        "auth_bad_email": "That does not look like a valid email address.",
+        "auth_email_taken": ("That email address already belongs to another "
+                             "account."),
+        "auth_username_taken": "That username is already taken.",
+        "auth_forgot_title": "Reset your password",
+        "auth_forgot_intro": ("Enter your account's email address. If it is "
+                              "confirmed, a reset link will be sent to it."),
+        "auth_forgot_email": "Email address",
+        "auth_forgot_btn": "Send reset link",
+        "auth_forgot_sent": ("If that address belongs to an account, a "
+                             "reset link is on its way."),
+        "auth_forgot_disabled": ("Email sending is not configured — ask an "
+                                 "admin to set a new password for you on "
+                                 "the Team page."),
+        "auth_pw_invite_title": "Choose your password",
+        "auth_pw_reset_title": "Choose a new password",
+        "auth_pw_new": "New password (at least 8 characters)",
+        "auth_pw_btn": "Save password",
+        "auth_token_dead_title": "This link is no longer valid",
+        "auth_token_dead": ("The link has expired or was already used. Ask "
+                            "for a fresh one."),
+        "auth_verified_title": "Email confirmed",
+        "auth_verified_msg": ("Your email address is confirmed — password "
+                              "reset now works for this account."),
+        "auth_go_login": "Go to login",
+        "err_session_expired": "Your session expired — log in again.",
+        "err_auth_unconfigured": "Authentication is not configured.",
+        "nav_team": "Team",
+        "nav_logout": "Log out ({name})",
+
+        # auth: team page
+        "team_heading": "Team",
+        "team_th_username": "Username",
+        "team_th_display": "Display name",
+        "team_th_email": "Email",
+        "team_th_status": "Status",
+        "team_th_role": "Role",
+        "team_th_actions": "Actions",
+        "team_status_pending": "Invite pending",
+        "team_status_verified": "Verified",
+        "team_status_unverified": "Unverified",
+        "team_role_admin": "Admin",
+        "team_role_member": "Member",
+        "team_resend_btn": "Resend invite",
+        "team_delete_btn": "Delete",
+        "team_add_heading": "Add a coworker",
+        "team_add_note": ("With an email address, an invite link is sent "
+                          "and the coworker picks their own password (leave "
+                          "the initial password empty). Without one, set an "
+                          "initial password and share it privately."),
+        "team_add_note_manual": ("Email sending is not configured, so set "
+                                 "an initial password and share it "
+                                 "privately."),
+        "team_initial_pw_label": "Initial password (when not sending an invite)",
+        "team_is_admin_label": "Admin account",
+        "team_add_btn": "Add",
+        "team_email_heading": "Email address",
+        "team_email_label": "Email address (leave empty to remove)",
+        "team_target_label": "Account (username — admins may enter anyone's)",
+        "team_verify_btn": "Re-send confirmation",
+        "team_pw_heading": "Change password",
+        "team_pw_note": ("Changing a password signs that account out "
+                         "everywhere — including here, if it is your own."),
+        "team_pw_label": "New password (at least 8 characters)",
+        "team_save_btn": "Save",
+        "msg_user_added": "Account created.",
+        "msg_user_deleted": "Account deleted.",
+        "msg_invite_sent": "Invite sent.",
+        "msg_invite_resent": "Invite re-sent.",
+        "msg_invite_send_failed": ("The account was created, but the invite "
+                                   "email failed to send — use “Resend "
+                                   "invite”, or set an initial password via "
+                                   "“Change password”."),
+        "msg_send_failed": "The email failed to send — try again.",
+        "msg_pw_changed": ("Password changed. Every session for that "
+                           "account was signed out."),
+        "msg_email_saved": ("Email saved. A confirmation link was sent — "
+                            "password reset stays unavailable until the "
+                            "address is confirmed."),
+        "msg_email_saved_noconfirm": ("Email saved. Email sending is off, "
+                                      "so the address cannot be confirmed "
+                                      "or used for password reset yet."),
+        "msg_email_saved_sendfail": ("Email saved, but the confirmation "
+                                     "email failed to send — use “Re-send "
+                                     "confirmation” to try again."),
+        "msg_email_removed": "Email address removed.",
+        "msg_verify_sent": "Confirmation link sent.",
+        "err_not_admin": "Only admins can do that.",
+        "err_no_such_user": "No such account.",
+        "err_delete_self": "You cannot delete your own account.",
+        "err_delete_last_admin": "You cannot delete the last admin account.",
+        "err_pending_only": "That account is not awaiting an invite.",
+        "err_no_email_on_file": "That account has no email address on file.",
+        "err_email_off": "Email sending is not configured.",
+        "err_password_required": ("An initial password is required when no "
+                                  "invite email can be sent."),
+
         # errors
         "error_heading": "Something went wrong.",
         "back_to_upload": "&larr; back to upload",
@@ -342,6 +477,113 @@ STRINGS = {
                              "工具<strong>没有提取</strong>这些单元格，"
                              "请人工确认是否有漏标。"),
         "th_fill": "底色",
+
+        # auth: login / setup / forgot
+        "auth_login_title": "登录",
+        "auth_username": "用户名",
+        "auth_password": "密码",
+        "auth_login_btn": "登录",
+        "auth_login_failed": "用户名或密码错误。",
+        "auth_throttled": "尝试次数过多，请等待 {n} 秒后重试。",
+        "auth_login_hint": ("账号由管理员在“团队”页创建。还没有账号？"
+                            "请联系管理员发送邀请。"),
+        "auth_login_setup_link": "创建管理员账号（需要初始化密码）",
+        "auth_login_forgot_link": "忘记密码？",
+        "auth_setup_title": "管理员初始化",
+        "auth_setup_hint": ("本页使用服务器的初始化密码来创建（或找回）管理员账号。"
+                            "如果账号已存在，密码会被重置为你在此输入的新密码；"
+                            "留空的字段保持原值不变。"),
+        "auth_setup_code": "初始化密码",
+        "auth_setup_display": "显示名称（可选）",
+        "auth_setup_email": "邮箱（可选 — 用于找回密码）",
+        "auth_setup_btn": "创建管理员账号",
+        "auth_setup_wrong_code": "初始化密码不正确。",
+        "auth_setup_disabled": "初始化不可用 — 服务器没有配置初始化密码。",
+        "auth_bad_username": ("用户名需为 2–32 个字符：小写字母、数字、点、"
+                              "横线或下划线，且以字母或数字开头。"),
+        "auth_bad_password": "密码至少需要 8 个字符。",
+        "auth_bad_email": "邮箱地址格式不正确。",
+        "auth_email_taken": "该邮箱已被其他账号使用。",
+        "auth_username_taken": "该用户名已被占用。",
+        "auth_forgot_title": "重置密码",
+        "auth_forgot_intro": ("输入账号绑定的邮箱地址。如果该邮箱已确认，"
+                              "重置链接会发送到该邮箱。"),
+        "auth_forgot_email": "邮箱地址",
+        "auth_forgot_btn": "发送重置链接",
+        "auth_forgot_sent": "如果该邮箱对应某个账号，重置链接已在路上。",
+        "auth_forgot_disabled": ("邮件功能未配置 — 请联系管理员在“团队”页"
+                                 "为你设置新密码。"),
+        "auth_pw_invite_title": "设置你的密码",
+        "auth_pw_reset_title": "设置新密码",
+        "auth_pw_new": "新密码（至少 8 个字符）",
+        "auth_pw_btn": "保存密码",
+        "auth_token_dead_title": "链接已失效",
+        "auth_token_dead": "该链接已过期或已被使用，请重新获取。",
+        "auth_verified_title": "邮箱已确认",
+        "auth_verified_msg": "邮箱确认成功 — 此账号现在可以使用“忘记密码”功能。",
+        "auth_go_login": "去登录",
+        "err_session_expired": "登录已过期，请重新登录。",
+        "err_auth_unconfigured": "服务器尚未配置身份验证。",
+        "nav_team": "团队",
+        "nav_logout": "退出（{name}）",
+
+        # auth: team page
+        "team_heading": "团队",
+        "team_th_username": "用户名",
+        "team_th_display": "显示名称",
+        "team_th_email": "邮箱",
+        "team_th_status": "状态",
+        "team_th_role": "角色",
+        "team_th_actions": "操作",
+        "team_status_pending": "待接受邀请",
+        "team_status_verified": "已确认",
+        "team_status_unverified": "未确认",
+        "team_role_admin": "管理员",
+        "team_role_member": "成员",
+        "team_resend_btn": "重发邀请",
+        "team_delete_btn": "删除",
+        "team_add_heading": "添加同事",
+        "team_add_note": ("填写邮箱时会发送邀请链接，由同事自行设置密码"
+                          "（初始密码留空即可）；不填邮箱则需要设置初始密码，"
+                          "并私下告知对方。"),
+        "team_add_note_manual": "邮件功能未配置：请设置初始密码，并私下告知对方。",
+        "team_initial_pw_label": "初始密码（不发送邀请时必填）",
+        "team_is_admin_label": "设为管理员",
+        "team_add_btn": "添加",
+        "team_email_heading": "邮箱地址",
+        "team_email_label": "邮箱地址（留空即解除绑定）",
+        "team_target_label": "账号（用户名 — 管理员可填写任何账号）",
+        "team_verify_btn": "重发确认邮件",
+        "team_pw_heading": "修改密码",
+        "team_pw_note": ("修改密码会使该账号在所有设备上退出登录 — "
+                         "修改自己的密码时也包括当前页面。"),
+        "team_pw_label": "新密码（至少 8 个字符）",
+        "team_save_btn": "保存",
+        "msg_user_added": "账号已创建。",
+        "msg_user_deleted": "账号已删除。",
+        "msg_invite_sent": "邀请已发送。",
+        "msg_invite_resent": "邀请已重新发送。",
+        "msg_invite_send_failed": ("账号已创建，但邀请邮件发送失败 — "
+                                   "请使用“重发邀请”，或通过“修改密码”"
+                                   "为其设置初始密码。"),
+        "msg_send_failed": "邮件发送失败，请重试。",
+        "msg_pw_changed": "密码已修改，该账号的所有登录会话均已退出。",
+        "msg_email_saved": ("邮箱已保存，确认邮件已发送 — 在邮箱确认之前，"
+                            "“忘记密码”功能暂不可用。"),
+        "msg_email_saved_noconfirm": ("邮箱已保存。邮件功能未配置，"
+                                      "该邮箱暂时无法确认，也无法用于找回密码。"),
+        "msg_email_saved_sendfail": ("邮箱已保存，但确认邮件发送失败 — "
+                                     "请点击“重发确认邮件”重试。"),
+        "msg_email_removed": "邮箱已解除绑定。",
+        "msg_verify_sent": "确认邮件已发送。",
+        "err_not_admin": "只有管理员可以执行此操作。",
+        "err_no_such_user": "账号不存在。",
+        "err_delete_self": "不能删除自己的账号。",
+        "err_delete_last_admin": "不能删除最后一个管理员账号。",
+        "err_pending_only": "该账号并非待接受邀请状态。",
+        "err_no_email_on_file": "该账号没有绑定邮箱。",
+        "err_email_off": "邮件功能未配置。",
+        "err_password_required": "无法发送邀请邮件时，必须设置初始密码。",
 
         # errors
         "error_heading": "出错了。",

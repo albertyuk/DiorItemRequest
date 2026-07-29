@@ -72,13 +72,48 @@ fly secrets set ANTHROPIC_API_KEY=sk-ant-...   # or export it locally
 - One API call per run on a ~1 KB preview — cost is a fraction of a cent;
   detection failures (rate limit, network) never fail the run.
 
+## Accounts & login
+
+The app is a closed team tool — no self-signup. Three ideas carry the design:
+
+- **`APP_PASSWORD` is a *setup code*, not a login password.** Its only power
+  is creating (or recovering) the **admin** account at `/setup`. Nobody logs
+  in with it day-to-day; treat it as the root secret.
+- **Accounts are created by admins on `/team`** — with an email address an
+  invite link is sent and the coworker picks their own password (the admin
+  never learns it); without one the admin sets an initial password and
+  shares it privately. Every run records who uploaded and who built.
+- **Email addresses must prove ownership** (a confirmation link) before they
+  can receive password-reset links — a typo'd address is a stranger's inbox.
+
+Sessions are signed cookies versioned against the password hash: changing or
+resetting a password signs that account out everywhere, instantly. Login,
+setup, and forgot-password are all rate-limited. Everything degrades
+gracefully: without an email provider, invites/reset disappear and admins set
+passwords by hand.
+
+| Env var | Default | Meaning |
+|---|---|---|
+| `APP_PASSWORD` | *(required in prod)* | Setup code: creates/recovers the admin at `/setup`. Unset → the app fails closed (503) unless `ALLOW_OPEN_ACCESS` is set. |
+| `ALLOW_OPEN_ACCESS` | `0` | Explicit no-auth opt-out for local dev only. |
+| `APP_SECRET` | *(generated)* | Session signing key; auto-generated and persisted to `DATA_DIR/session_secret` when unset. |
+| `SESSION_COOKIE_SECURE` | `1` | Set `0` only for plain-HTTP local dev. |
+| `RESEND_API_KEY` | *(unset)* | Enables invite / confirmation / reset emails (Resend). |
+| `EMAIL_FROM` | resend onboarding | From address (domain must be verified with Resend). |
+| `PUBLIC_BASE_URL` | *(unset)* | Absolute origin for emailed links, e.g. `https://dior-item-request.fly.dev`. Required for correct links in production. |
+| `INVITE_TTL_HOURS` / `RESET_TTL_HOURS` | `72` / `2` | Link lifetimes. |
+
+**Migrating from `APP_USERS`:** that variable is retired and ignored (a
+warning is logged). Open `/setup`, enter the `APP_PASSWORD` value as the
+setup code to create your admin account, then add coworkers on `/team`.
+
 ## Local run
 
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
-python -m flask --app app run --port 8080
-# open http://localhost:8080 — no password required locally unless APP_PASSWORD is set
+ALLOW_OPEN_ACCESS=1 python -m flask --app app run --port 8080
+# open http://localhost:8080 — or set APP_PASSWORD instead and log in via /setup
 ```
 
 Data (stored query export, last 10 outputs) lives in `DATA_DIR`
@@ -109,23 +144,22 @@ sample copy of the map does not contain) run against generated fixtures.
 ```bash
 fly launch --no-deploy          # accepts existing fly.toml; pick/adjust app name
 fly volumes create data --size 1
-fly secrets set APP_PASSWORD=<choose-a-strong-password>
+fly secrets set APP_PASSWORD=<choose-a-strong-setup-code>
+fly secrets set PUBLIC_BASE_URL=https://<your-app>.fly.dev
+fly secrets set RESEND_API_KEY=re_...        # optional: invite/reset emails
 fly deploy --ha=false
 ```
 
+Then open the site, follow the redirect to `/setup`, enter the setup code,
+and create your admin account; add coworkers on `/team`.
+
 Notes:
 
-- **Authentication is required in production** — the app refuses to start
-  on Fly without it (it fronts internal pricing data). Two modes:
-  - **Named users (recommended):**
-    `fly secrets set APP_USERS='albert:pw1,vivian:pw2'` — each person logs
-    in with their own name and password (username case-insensitive), and
-    every run records who uploaded it and who reviewed & built it (shown
-    on the report and the recent-runs list).
-  - **Shared password:** `fly secrets set APP_PASSWORD=...` — any username,
-    one password. Works alongside `APP_USERS` as a fallback, except that it
-    cannot sign in under a configured user's name — each named account only
-    accepts its own password, so the run history cannot be forged.
+- **Authentication is required in production** — without a setup code (and
+  no explicit `ALLOW_OPEN_ACCESS=1`) the app refuses to start, and the
+  request gate independently fails closed with 503 (it fronts internal
+  pricing data). See “Accounts & login” above for how accounts, invites,
+  and password reset work.
 - The machine needs **1 GB memory** (set in `fly.toml`) — parsing the ~70 MB
   map read-only peaks well above the 256 MB default.
 - **Deploy with `--ha=false` (single machine).** Fly's default first deploy

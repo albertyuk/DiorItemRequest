@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}{{ t('team_heading') }}{% endblock %}
+{% block content %}
+  {% if msg %}<div class="ok">{{ msg }}</div>{% endif %}
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+  <div class="card">
+    <h2>{{ t('team_heading') }}</h2>
+    <table>
+      <tr><th>{{ t('team_th_username') }}</th><th>{{ t('team_th_display') }}</th>
+          <th>{{ t('team_th_email') }}</th><th>{{ t('team_th_status') }}</th>
+          <th>{{ t('team_th_role') }}</th>
+          {% if g.is_admin %}<th>{{ t('team_th_actions') }}</th>{% endif %}</tr>
+      {% for u in users %}
+        <tr>
+          <td><strong>{{ u.username }}</strong></td>
+          <td>{{ u.display or "—" }}</td>
+          <td class="muted">{{ u.email or "—" }}</td>
+          <td>
+            {% if not u.password_hash %}
+              <span class="badge badge-warn">{{ t('team_status_pending') }}</span>
+            {% elif u.email and u.email_verified %}
+              <span class="badge badge-ok">{{ t('team_status_verified') }}</span>
+            {% elif u.email %}
+              <span class="badge badge-warn">{{ t('team_status_unverified') }}</span>
+            {% else %}
+              <span class="muted">—</span>
+            {% endif %}
+          </td>
+          <td>{{ t('team_role_admin') if u.is_admin else t('team_role_member') }}</td>
+          {% if g.is_admin %}
+            <td>
+              {% if not u.password_hash and u.email and email_on %}
+                <form method="post" style="display:inline"
+                      action="{{ url_for('auth.team_resend_invite') }}">
+                  <input type="hidden" name="username" value="{{ u.username }}">
+                  <button class="btn-quiet" type="submit">{{ t('team_resend_btn') }}</button>
+                </form>
+              {% endif %}
+              {% if u.username != g.username %}
+                <form method="post" style="display:inline"
+                      action="{{ url_for('auth.team_delete') }}">
+                  <input type="hidden" name="username" value="{{ u.username }}">
+                  <button class="btn-quiet" type="submit">{{ t('team_delete_btn') }}</button>
+                </form>
+              {% endif %}
+            </td>
+          {% endif %}
+        </tr>
+      {% endfor %}
+    </table>
+  </div>
+
+  {% if g.is_admin %}
+    <div class="card">
+      <h2>{{ t('team_add_heading') }}</h2>
+      <p class="muted">{{ t('team_add_note' if email_on else 'team_add_note_manual') }}</p>
+      <form method="post" class="run" action="{{ url_for('auth.team_add') }}">
+        <label for="add_username">{{ t('auth_username') }}</label>
+        <input id="add_username" name="username" required>
+        <label for="add_display">{{ t('auth_setup_display') }}</label>
+        <input id="add_display" name="display">
+        {% if email_on %}
+          <label for="add_email">{{ t('auth_setup_email') }}</label>
+          <input id="add_email" name="email" type="email">
+        {% endif %}
+        <label for="add_password">{{ t('team_initial_pw_label') }}</label>
+        <input id="add_password" name="password" type="password"
+               autocomplete="new-password">
+        <p><label style="font-weight:400;display:inline">
+          <input type="checkbox" name="is_admin" value="1"
+                 style="width:auto;display:inline"> {{ t('team_is_admin_label') }}
+        </label></p>
+        <p><button type="submit">{{ t('team_add_btn') }}</button></p>
+      </form>
+    </div>
+  {% endif %}
+
+  <div class="card">
+    <h2>{{ t('team_email_heading') }}</h2>
+    <form method="post" class="run" action="{{ url_for('auth.team_email') }}">
+      {% if g.is_admin %}
+        <label for="em_username">{{ t('team_target_label') }}</label>
+        <input id="em_username" name="username" value="{{ g.username }}">
+      {% else %}
+        <input type="hidden" name="username" value="{{ g.username }}">
+      {% endif %}
+      <label for="em_email">{{ t('team_email_label') }}</label>
+      <input id="em_email" name="email" type="email"
+             value="{{ g.account.email if g.account and g.account.email else '' }}">
+      <p><button type="submit">{{ t('team_save_btn') }}</button>
+      {% if email_on %}
+        <button class="btn-quiet" type="submit" style="margin-left:.6rem"
+                formaction="{{ url_for('auth.team_verify_email') }}">
+          {{ t('team_verify_btn') }}</button>
+      {% endif %}</p>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>{{ t('team_pw_heading') }}</h2>
+    <p class="muted">{{ t('team_pw_note') }}</p>
+    <form method="post" class="run" action="{{ url_for('auth.team_password') }}">
+      {% if g.is_admin %}
+        <label for="pw_username">{{ t('team_target_label') }}</label>
+        <input id="pw_username" name="username" value="{{ g.username }}">
+      {% else %}
+        <input type="hidden" name="username" value="{{ g.username }}">
+      {% endif %}
+      <label for="pw_password">{{ t('team_pw_label') }}</label>
+      <input id="pw_password" name="password" type="password" required
+             minlength="8" autocomplete="new-password">
+      <p><button type="submit">{{ t('team_save_btn') }}</button></p>
+    </form>
+  </div>
+{% endblock %}

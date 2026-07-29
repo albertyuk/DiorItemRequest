@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}{{ t('auth_setup_title') }}{% endblock %}
+{% block content %}
+  <div class="card" style="max-width:28rem;margin:0 auto">
+    <h2>{{ t('auth_setup_title') }}</h2>
+    <p class="muted">{{ t('auth_setup_hint') }}</p>
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    <form method="post" class="run" action="{{ url_for('auth.setup_page') }}">
+      <label for="code">{{ t('auth_setup_code') }}</label>
+      <input id="code" name="code" type="password" required
+             autocomplete="off">
+      <label for="username">{{ t('auth_username') }}</label>
+      <input id="username" name="username" required
+             autocomplete="username"
+             value="{{ form.username if form else '' }}">
+      <label for="password">{{ t('auth_password') }}</label>
+      <input id="password" name="password" type="password" required
+             minlength="8" autocomplete="new-password">
+      <label for="display">{{ t('auth_setup_display') }}</label>
+      <input id="display" name="display"
+             value="{{ form.display if form else '' }}">
+      <label for="email">{{ t('auth_setup_email') }}</label>
+      <input id="email" name="email" type="email"
+             value="{{ form.email if form else '' }}">
+      <p><button type="submit">{{ t('auth_setup_btn') }}</button></p>
+    </form>
+    <p class="muted"><a href="{{ url_for('auth.login_page') }}">{{ t('auth_go_login') }}</a></p>
+  </div>
+{% endblock %}

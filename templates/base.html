@@ -76,6 +76,10 @@
     .toolbar .spacer { flex: 1; }
     form.run label { display: block; margin: 1rem 0 .25rem;
                      font-weight: 600; }
+    form.run input:not([type="file"]):not([type="checkbox"]) {
+      width: 100%; max-width: 22rem; padding: .45rem .6rem;
+      border: 1px solid #d4d9de; border-radius: 7px; font-size: .95rem;
+      background: #fff; }
     #spinner { display: none; margin-top: .8rem; }
     .bar-track { width: 100%; height: 14px; background: #e8ebee;
                  border: 1px solid #d4d9de; border-radius: 7px;
@@ -101,6 +105,10 @@
       <nav>
         <a href="{{ url_for('index') }}">{{ t('nav_home') }}</a>
         <a href="{{ url_for('help_page') }}">{{ t('nav_help') }}</a>
+        {% if g.username %}
+          <a href="{{ url_for('auth.team_page') }}">{{ t('nav_team') }}</a>
+          <a href="{{ url_for('auth.logout') }}">{{ t('nav_logout', name=g.user) }}</a>
+        {% endif %}
         <a class="lang" href="{{ lang_target }}" rel="nofollow">{{ t('lang_switch') }}</a>
       </nav>
     </div>

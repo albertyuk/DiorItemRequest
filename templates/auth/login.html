@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}{{ t('auth_login_title') }}{% endblock %}
+{% block content %}
+  <div class="card" style="max-width:26rem;margin:0 auto">
+    <h2>{{ t('auth_login_title') }}</h2>
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    <form method="post" class="run" action="{{ url_for('auth.login_page') }}">
+      <label for="username">{{ t('auth_username') }}</label>
+      <input id="username" name="username" required autofocus
+             autocomplete="username" value="{{ username or '' }}">
+      <label for="password">{{ t('auth_password') }}</label>
+      <input id="password" name="password" type="password" required
+             autocomplete="current-password">
+      <p><button type="submit">{{ t('auth_login_btn') }}</button></p>
+    </form>
+    <p class="muted">{{ t('auth_login_hint') }}</p>
+    <p class="muted">
+      <a href="{{ url_for('auth.setup_page') }}">{{ t('auth_login_setup_link') }}</a><br>
+      <a href="{{ url_for('auth.forgot_page') }}">{{ t('auth_login_forgot_link') }}</a>
+    </p>
+  </div>
+{% endblock %}
