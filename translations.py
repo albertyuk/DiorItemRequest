@@ -25,18 +25,20 @@ STRINGS = {
         # index
         "intro": ("Extracts yellow-highlighted (reorder) SKUs from a sell-thru "
                   "map, looks up all color/size variants in the stored stock "
-                  "query export, and produces a filled ProductsList workbook."),
+                  "query export, and produces a filled ProductsList workbook. "
+                  "Nothing is written until you approve the result on the "
+                  "review page."),
         "stored_query": ("Stored stock query: <strong>{name}</strong> "
                          "&mdash; {rows} rows, uploaded {time}."),
         "no_query_warning": ("<strong>No stock query export stored yet.</strong> "
                              "Upload one below — it is kept for future runs "
                              "until replaced."),
-        "map_label": "Sell-thru map (.xlsx) — required each run",
-        "query_label": ("Stock query export (.xlsx) — optional, replaces the "
-                        "stored one"),
+        "map_label": ("Sell-thru map (.xlsx) — the workbook with the "
+                      "yellow-highlighted styles; upload it every run"),
+        "query_label": ("Stock query export (.xlsx) — optional: leave empty "
+                        "to use the stored one, or choose a file to replace "
+                        "it"),
         "process_btn": "Process",
-        "spinner": ("&#9203; Processing&hellip; parsing a large map takes up "
-                    "to a minute or two. Leave this page open."),
 
         # report
         "new_run": "&larr; new run",
@@ -80,12 +82,16 @@ STRINGS = {
         "page_review": "review",
         "review_heading": "Review before building",
         "review_intro": ("Everything extracted from <strong>{map}</strong> "
-                         "is listed below. Untick any SKU that should not go "
-                         "into the ProductsList, then build — nothing is "
-                         "written until you do."),
-        "review_ai_intro": ("These columns were AI-detected; their SKUs are "
-                            "included in the list below with a purple badge. "
-                            "Judge them by the sample values."),
+                         "is listed below. Ticked SKUs go into the "
+                         "ProductsList; untick the ones that should stay "
+                         "out, then press the green build button — it shows "
+                         "exactly how many rows will be written, and no file "
+                         "is created until you press it."),
+        "review_ai_intro": ("Claude located these SKU columns by reading the "
+                            "sheet headers. Check the sample values: do they "
+                            "look like real SKU codes? SKUs from these "
+                            "columns carry a purple “AI” badge in "
+                            "the list below — untick any that look wrong."),
         "review_sku_heading": "Extracted SKUs",
         "th_colorways": "Highlighted colorway(s)",
         "th_stock_rows": "Stock rows",
@@ -102,9 +108,11 @@ STRINGS = {
         "query_used": ("Stock query used: <strong>{name}</strong> — {rows} "
                        "rows, uploaded {time}."),
         "th_source": "Source", "src_ai": "AI", "src_memory": "remembered",
-        "review_memory_note": ("Columns marked “remembered” were approved "
-                               "on a previous run — no AI call was needed "
-                               "for them."),
+        "review_memory_note": ("Columns marked “remembered” were approved by "
+                               "a reviewer on an earlier run, so they needed "
+                               "no AI call this time. To make the tool "
+                               "forget a sheet's remembered columns, untick "
+                               "every SKU of that sheet before building."),
         "by_uploaded": "Uploaded by {name}",
         "by_built": "Reviewed & built by {name}",
         "th_user": "By",
@@ -123,7 +131,8 @@ STRINGS = {
         "upload_uploading": "Uploading…",
         "upload_analyzing": "Upload complete — reading the sheet headers…",
         "ai_failed": ("AI column detection was unavailable this run: "
-                      "{detail}. The standard scan still ran in full."),
+                      "{detail}. The standard scan still ran in full, and "
+                      "any “remembered” columns were still used."),
         "ai_off": ("AI column detection is off — set the ANTHROPIC_API_KEY "
                    "secret to enable it. The standard scan ran in full."),
         "step2_title": "Step 2 — extract base SKUs",
@@ -202,17 +211,17 @@ STRINGS = {
         # index
         "intro": ("自动从 Sell-Thru Map（销售进度表）中提取所有标黄（需补货）的 SKU，"
                   "在已保存的库存查询表中匹配出全部颜色和尺码，"
-                  "并生成可直接使用的 ProductsList 工作簿。"),
+                  "并生成可直接使用的 ProductsList 工作簿。"
+                  "生成前会先进入确认页，经你核对确认后才会写入文件。"),
         "stored_query": ("当前保存的库存查询表：<strong>{name}</strong>，"
                          "共 {rows} 行，上传于 {time}。"),
         "no_query_warning": ("<strong>还没有保存库存查询表。</strong>"
                              "请在下方上传；保存后无需每次重复上传，"
                              "之后上传新文件即可替换。"),
-        "map_label": "Sell-Thru Map（.xlsx）— 每次都需要上传",
-        "query_label": "库存查询表（.xlsx）— 可选，上传后替换之前保存的版本",
+        "map_label": "Sell-Thru Map（.xlsx）— 含标黄款式的工作簿，每次处理都需要上传",
+        "query_label": ("库存查询表（.xlsx）— 可选：留空则使用已保存的版本，"
+                        "选择新文件即替换"),
         "process_btn": "开始处理",
-        "spinner": ("&#9203; 处理中&hellip; 文件较大时需要一两分钟，"
-                    "请勿关闭页面。"),
 
         # report
         "new_run": "&larr; 返回首页",
@@ -250,10 +259,13 @@ STRINGS = {
         "page_review": "确认",
         "review_heading": "生成前确认",
         "review_intro": ("以下是从 <strong>{map}</strong> 中提取到的全部内容。"
-                         "取消勾选不需要写入 ProductsList 的款号，再点击生成 — "
-                         "在你确认之前不会生成任何文件。"),
-        "review_ai_intro": ("以下列由 AI 识别，其中的 SKU 已列入下方清单并带有"
-                            "紫色标记。请根据示例值判断是否正确。"),
+                         "保持勾选的款号会写入 ProductsList；不需要的请取消勾选，"
+                         "然后点击绿色生成按钮 — 按钮上会显示将写入的行数，"
+                         "点击之前不会生成任何文件。"),
+        "review_ai_intro": ("以下 SKU 列由 Claude 阅读表头后识别。"
+                            "请核对示例值是否确实是 SKU 编码；"
+                            "来自这些列的款号在下方清单中带紫色“AI”标记，"
+                            "发现识别有误就取消勾选。"),
         "review_sku_heading": "提取到的 SKU",
         "th_colorways": "标黄颜色款",
         "th_stock_rows": "库存行数",
@@ -270,8 +282,9 @@ STRINGS = {
         "query_used": ("使用的库存查询表：<strong>{name}</strong>，"
                        "共 {rows} 行，上传于 {time}。"),
         "th_source": "来源", "src_ai": "AI", "src_memory": "已记住",
-        "review_memory_note": ("标注“已记住”的列来自之前运行时的人工确认，"
-                               "本次无需再调用 AI。"),
+        "review_memory_note": ("标注“已记住”的列在之前的运行中已经过人工确认，"
+                               "本次无需再调用 AI。如需让工具忘记某个工作表"
+                               "已记住的列，生成前将该表的款号全部取消勾选即可。"),
         "by_uploaded": "上传：{name}",
         "by_built": "确认并生成：{name}",
         "th_user": "操作人",
@@ -287,7 +300,8 @@ STRINGS = {
                           "请返回重新上传。"),
         "upload_uploading": "正在上传…",
         "upload_analyzing": "上传完成 — 正在读取表头…",
-        "ai_failed": "本次运行 AI 识别不可用：{detail}。标准扫描已正常完成。",
+        "ai_failed": ("本次运行 AI 识别不可用：{detail}。"
+                      "标准扫描已正常完成，“已记住”的列（如有）也照常使用。"),
         "ai_off": ("AI 识别功能未开启 — 配置 ANTHROPIC_API_KEY 密钥即可启用。"
                    "标准扫描已正常完成。"),
         "step2_title": "第 2 步：提取基础款号",

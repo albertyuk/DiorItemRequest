@@ -25,7 +25,8 @@
 
   <h2>开始前需要准备什么？</h2>
   <ol class="tut">
-    <li><strong>登录密码</strong>：用户名随便填，密码找管理员要。</li>
+    <li><strong>登录账号</strong>：向管理员索取。如果团队是一人一个账号，
+        请用自己的名字登录 — 每次运行都会记录是谁上传的、谁确认生成的。</li>
     <li><strong>Sell-Thru Map（.xlsx）</strong>：需要补货的款式已经标黄，
         每次处理都要上传。</li>
     <li><strong>库存查询表（.xlsx）</strong>：必须是标准的 13 列导出文件
@@ -36,16 +37,38 @@
   </ol>
 
   <h2>第一次使用：操作步骤</h2>
+  <p>页面顶部的三步指示（上传 → 确认 → 报告）随时显示你在流程中的位置。</p>
   <ol class="tut">
-    <li>打开网站，输入密码登录。</li>
-    <li>如果首页提示“还没有保存库存查询表”，在第二个文件框里选择库存查询表。</li>
+    <li>打开网站，用自己的账号登录。</li>
+    <li>如果首页提示“还没有保存库存查询表”，在第二个文件框里选择库存查询表
+        （只需上传这一次，之后工具会一直保存）。</li>
     <li>在第一个文件框里选择 Sell-Thru Map。</li>
-    <li>点击<strong>开始处理</strong>，观察进度条 — 文件较大时需要一两分钟。</li>
-    <li>在<strong>确认页</strong>核对提取结果：每个标黄款号（以及 AI 识别的列）
-        和对应的库存行数。取消勾选不需要的款号，然后点击生成。</li>
+    <li>点击<strong>开始处理</strong>，等待进度条走完 — 文件较大时需要一两分钟，
+        期间请不要关闭页面。</li>
+    <li>进入<strong>确认页</strong>，核对提取结果并取消勾选不需要的款号
+        （详见下方“确认页说明”），然后点击绿色生成按钮。</li>
     <li>生成后进入<strong>运行报告</strong>页，点绿色按钮下载
         ProductsList 工作簿。报告页有独立网址，可以刷新、收藏，之后随时回看。</li>
   </ol>
+
+  <h2>确认页说明</h2>
+  <p>在你点击绿色生成按钮之前，不会写入任何文件 — 最终结果由这一页决定。
+  清单中每一行是一个<strong>基础款号</strong>，同时显示它来自哪些标黄颜色款、
+  出现在哪些工作表、在库存查询表中匹配到多少行。</p>
+  <ul class="compact">
+    <li><strong>默认全部勾选。</strong>勾选 = 写入 ProductsList；
+        取消勾选 = 不写入（被排除的款号会记录在运行报告里，方便追溯）。</li>
+    <li>清单上方有三个快捷按钮：<em>全选</em>、<em>全不选</em>、
+        <em>仅选有库存</em>（一键取消所有没有匹配到库存的款号）。</li>
+    <li>绿色生成按钮上实时显示将写入的行数，随勾选变化自动更新。</li>
+    <li>三种标记的含义：紫色 <strong>AI</strong> = 该款号来自 Claude
+        识别的 SKU 列，请先核对上方表格中的示例值是否确实是 SKU；
+        绿色<strong>已记住</strong> = 该列在之前的运行中已经人工确认过，
+        本次没有调用 AI；黄色<strong>无库存</strong> = 库存查询表中没有
+        匹配记录，即使勾选也只会出现在 Unmatched 工作表里。</li>
+    <li>之前确认错了怎么办？把那个工作表的款号<strong>全部</strong>取消勾选
+        后生成，工具就会忘记这张表“已记住”的列，下次重新交给 AI 识别。</li>
+  </ul>
 
   <h2>如何阅读运行报告？</h2>
   <p>报告分四个步骤，展示工具每一步做了什么，都可以点开逐项核对：</p>
@@ -58,6 +81,8 @@
         （条形码、颜色、尺码、成本价、零售价）。这些就是最终写进输出文件的数据。</li>
     <li><strong>第 4 步</strong>：输出文件是怎么生成的（排序规则、公式、留空的列）。</li>
   </ol>
+  <p>报告顶部会注明是谁上传的、谁确认生成的；如果确认时排除过款号，
+  也会在“确认时排除的款号”下逐一列出。</p>
   <p>报告底部还有两个清单，需要留意：</p>
   <ul class="compact">
     <li><strong>未匹配的基础款号</strong>：标黄了，但库存查询表里查不到。
@@ -122,8 +147,10 @@
 
   <h2>What you need before you start</h2>
   <ol class="tut">
-    <li>The <strong>login password</strong> (any username works; ask the admin
-        for the password).</li>
+    <li>Your <strong>login</strong> — ask the admin. If the team uses named
+        accounts (one per person), log in with your own name: every run
+        records who uploaded the map and who reviewed &amp; built the
+        output.</li>
     <li>The <strong>Sell-Thru Map (.xlsx)</strong> with reorder styles marked
         yellow. Required for every run.</li>
     <li>The <strong>stock query export (.xlsx)</strong> — the standard 13-column
@@ -134,20 +161,49 @@
   </ol>
 
   <h2>Your first run, step by step</h2>
+  <p>The three-step indicator at the top of every page (Upload → Review →
+  Report) always shows where you are in the flow.</p>
   <ol class="tut">
-    <li>Open the site and log in.</li>
+    <li>Open the site and log in with your own account.</li>
     <li>If the front page says "No stock query export stored yet", pick the
-        query export in the second file field.</li>
+        query export in the second file field (you only do this once — the
+        tool keeps it for all later runs).</li>
     <li>Pick the Sell-Thru Map in the first file field.</li>
-    <li>Click <strong>Process</strong> and watch the progress bar — a large
-        map takes a minute or two.</li>
-    <li>On the <strong>review page</strong>, check what was extracted: every
-        highlighted SKU (and any AI-detected columns) with its stock-row
-        count. Untick anything you don't want, then build.</li>
+    <li>Click <strong>Process</strong> and let the progress bar finish — a
+        large map takes a minute or two; keep the page open.</li>
+    <li>On the <strong>review page</strong>, check what was extracted and
+        untick anything that should stay out (see "The review page,
+        explained" below), then press the green build button.</li>
     <li>You land on the <strong>run report</strong>; click the green button to
         download the ProductsList workbook. The report page is a real URL —
         refresh it, bookmark it, or come back to it later.</li>
   </ol>
+
+  <h2>The review page, explained</h2>
+  <p>Nothing is written until you press the green build button — this page
+  decides the final result. Each row in the list is one <strong>base style
+  number</strong>, shown with the highlighted colorways it came from, the
+  sheets it appears on, and how many stock rows it matched.</p>
+  <ul class="compact">
+    <li><strong>Everything starts ticked.</strong> Ticked = written into the
+        ProductsList; unticked = left out (the run report keeps a list of
+        what you excluded, for the record).</li>
+    <li>The three buttons above the list are shortcuts: <em>Select all</em>,
+        <em>Select none</em>, and <em>Only with stock</em> (unticks every
+        SKU that matched no stock rows in one click).</li>
+    <li>The green build button always shows exactly how many rows the
+        workbook will contain — it updates as you tick and untick.</li>
+    <li>The three badges: purple <strong>AI</strong> = the SKU comes from a
+        column located by Claude — first check the sample values in the
+        table above to confirm they really are SKUs; green
+        <strong>remembered</strong> = that column was approved by a person
+        on an earlier run, so no AI was needed this time; yellow
+        <strong>no stock</strong> = the SKU matched nothing in the stock
+        query, so even ticked it only appears on the Unmatched sheet.</li>
+    <li>Approved something by mistake earlier? Untick <strong>every</strong>
+        SKU of that sheet and build — the tool forgets that sheet's
+        remembered columns and will ask the AI afresh next time.</li>
+  </ul>
 
   <h2>How to read the run report</h2>
   <p>The report shows the work as four steps, each expandable for checking:</p>
@@ -163,6 +219,9 @@
     <li><strong>Step 4</strong>: how the workbook is written (sorting,
         formulas, blank columns).</li>
   </ol>
+  <p>The top of the report names who uploaded the map and who reviewed &amp;
+  built the run; if any SKUs were unticked at review, they are listed under
+  "Excluded at review".</p>
   <p>Two lists at the bottom deserve attention:</p>
   <ul class="compact">
     <li><strong>Unmatched bases</strong> — highlighted, but not found in the
