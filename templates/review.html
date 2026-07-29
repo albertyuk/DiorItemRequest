@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% set step = 2 %}
+{% block title %}{{ t('page_review') }}{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>{{ t('review_heading') }}</h2>
+    <p class="muted">{{ t('review_intro', map=map_filename | e) | safe }}</p>
+    {% if query_info and query_info.filename %}
+      <p class="muted">{{ t('query_used',
+                           name=query_info.filename | e,
+                           rows="{:,}".format(query_info.rows),
+                           time=query_info.uploaded_at | e) | safe }}</p>
+    {% endif %}
+  </div>
+
+  {% if ai.get('detection') %}
+    <div class="card">
+      <h3>{{ t('ai_heading') }}</h3>
+      <p class="muted">{{ t('review_ai_intro') }}</p>
+      <table>
+        <tr><th>{{ t('th_sheet') }}</th><th>{{ t('ai_th_column') }}</th>
+            <th>{{ t('ai_th_header') }}</th><th>{{ t('th_samples') }}</th>
+            <th>{{ t('ai_th_reason') }}</th></tr>
+        {% for d in ai.detection %}
+          {% for c in d.sku_columns %}
+            <tr>
+              <td>{{ d.sheet }}</td>
+              <td>{{ c.column }}</td>
+              <td>{{ c.header if c.header else "—" }}</td>
+              <td class="muted">{{ ai.get('samples', {}).get(d.sheet, {}).get(c.column, []) | join(", ") }}</td>
+              <td class="muted">{{ c.reason }}</td>
+            </tr>
+          {% endfor %}
+        {% endfor %}
+      </table>
+    </div>
+  {% elif ai.get('note') %}
+    <div class="warn">{{ t('ai_failed', detail=ai.get('note') | e) | safe }}</div>
+  {% endif %}
+
+  <form method="post" id="skuform"
+        action="{{ url_for('review_build', draft_id=draft_id) }}">
+    <div class="card">
+      <h3>{{ t('review_sku_heading') }} ({{ entries | length }})</h3>
+      <div class="toolbar">
+        <button type="button" class="btn-quiet" id="selall">{{ t('sel_all') }}</button>
+        <button type="button" class="btn-quiet" id="selnone">{{ t('sel_none') }}</button>
+        <button type="button" class="btn-quiet" id="selmatched">{{ t('sel_matched') }}</button>
+        <span class="spacer"></span>
+        <span class="muted" id="counter"></span>
+      </div>
+      <table>
+        <tr><th></th><th>{{ t('th_base') }}</th><th>{{ t('th_colorways') }}</th>
+            <th>{{ t('th_sheets') }}</th><th>{{ t('th_stock_rows') }}</th></tr>
+        {% for e in entries %}
+          <tr>
+            <td><input type="checkbox" name="sku" value="{{ e.base }}" checked
+                       data-rows="{{ e.rows }}" aria-label="{{ e.base }}"></td>
+            <td><strong>{{ e.base }}</strong>
+                {% if 'ai' in e.sources %}
+                  <span class="badge badge-ai">{{ t('badge_ai') }}</span>
+                {% endif %}</td>
+            <td class="muted">{{ e.skus | join(", ") }}</td>
+            <td class="muted">{{ e.sheets | join(", ") }}</td>
+            <td>{% if e.rows %}{{ e.rows }}{% else %}
+                <span class="badge badge-warn">{{ t('badge_no_stock') }}</span>
+              {% endif %}</td>
+          </tr>
+        {% endfor %}
+      </table>
+      <p>
+        <button id="buildbtn" type="submit"></button>
+        <a class="btn-quiet" href="{{ url_for('index') }}"
+           style="margin-left:.6rem">{{ t('confirm_cancel') }}</a>
+      </p>
+    </div>
+  </form>
+
+  <script>
+    const boxes = Array.from(document.querySelectorAll('input[name="sku"]'));
+    const counter = document.getElementById('counter');
+    const buildBtn = document.getElementById('buildbtn');
+    const btnTmpl = {{ t('btn_build') | tojson }};
+    const counterTmpl = {{ t('review_counter') | tojson }};
+    function refresh() {
+      const sel = boxes.filter(function (b) { return b.checked; });
+      const rows = sel.reduce(function (a, b) {
+        return a + parseInt(b.dataset.rows, 10);
+      }, 0);
+      counter.textContent = counterTmpl
+        .replace('{n}', sel.length).replace('{m}', boxes.length);
+      buildBtn.textContent = btnTmpl.replace('{rows}', rows);
+    }
+    boxes.forEach(function (b) { b.addEventListener('change', refresh); });
+    document.getElementById('selall').onclick = function () {
+      boxes.forEach(function (b) { b.checked = true; }); refresh();
+    };
+    document.getElementById('selnone').onclick = function () {
+      boxes.forEach(function (b) { b.checked = false; }); refresh();
+    };
+    document.getElementById('selmatched').onclick = function () {
+      boxes.forEach(function (b) {
+        b.checked = parseInt(b.dataset.rows, 10) > 0;
+      }); refresh();
+    };
+    document.getElementById('skuform').addEventListener('submit', function () {
+      buildBtn.disabled = true;
+    });
+    refresh();
+  </script>
+{% endblock %}

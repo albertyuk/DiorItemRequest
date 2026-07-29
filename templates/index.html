@@ -1,37 +1,64 @@
 {% extends "base.html" %}
+{% set step = 1 %}
 {% block title %}{{ t('page_upload') }}{% endblock %}
 {% block content %}
-  <p class="muted">{{ t('intro') }}
-    <a href="{{ url_for('help_page') }}">{{ t('help_link') }}</a></p>
+  <div class="card">
+    <h2>{{ t('page_upload_heading') }}</h2>
+    <p class="muted">{{ t('intro') }}
+      <a href="{{ url_for('help_page') }}">{{ t('help_link') }}</a></p>
 
-  {% if query_meta %}
-    <div class="ok">
-      {{ t('stored_query',
-           name=query_meta.filename | e,
-           rows="{:,}".format(query_meta.rows),
-           time=query_meta.uploaded_at | e) | safe }}
-    </div>
-  {% else %}
-    <div class="warn">{{ t('no_query_warning') | safe }}</div>
-  {% endif %}
+    {% if query_meta %}
+      <div class="ok">
+        {{ t('stored_query',
+             name=query_meta.filename | e,
+             rows="{:,}".format(query_meta.rows),
+             time=query_meta.uploaded_at | e) | safe }}
+      </div>
+    {% else %}
+      <div class="warn">{{ t('no_query_warning') | safe }}</div>
+    {% endif %}
 
-  <form class="run" id="runform" action="{{ url_for('process') }}"
-        method="post" enctype="multipart/form-data"
-        data-uploading="{{ t('upload_uploading') }}"
-        data-analyzing="{{ t('upload_analyzing') }}">
-    <label for="map_file">{{ t('map_label') }}</label>
-    <input type="file" id="map_file" name="map_file" accept=".xlsx" required>
+    <form class="run" id="runform" action="{{ url_for('process') }}"
+          method="post" enctype="multipart/form-data"
+          data-uploading="{{ t('upload_uploading') }}"
+          data-analyzing="{{ t('upload_analyzing') }}">
+      <label for="map_file">{{ t('map_label') }}</label>
+      <input type="file" id="map_file" name="map_file" accept=".xlsx" required>
 
-    <label for="query_file">{{ t('query_label') }}</label>
-    <input type="file" id="query_file" name="query_file" accept=".xlsx">
+      <label for="query_file">{{ t('query_label') }}</label>
+      <input type="file" id="query_file" name="query_file" accept=".xlsx">
 
-    <button id="go" type="submit">{{ t('process_btn') }}</button>
-    <div id="upwrap" style="display:none">
-      <div class="bar-track"><div class="bar-fill" id="upbar"></div></div>
-      <p class="muted" id="upmsg"></p>
-    </div>
-    <div class="error" id="formerr" style="display:none"></div>
-  </form>
+      <p><button id="go" type="submit">{{ t('process_btn') }}</button></p>
+      <div id="upwrap" style="display:none">
+        <div class="bar-track"><div class="bar-fill" id="upbar"></div></div>
+        <p class="muted" id="upmsg"></p>
+      </div>
+      <div class="error" id="formerr" style="display:none"></div>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>{{ t('recent_heading') }}</h2>
+    {% if recent %}
+      <table>
+        <tr><th>{{ t('recent_map') }}</th><th>{{ t('th_rows_written') }}</th>
+            <th>{{ t('recent_when') }}</th><th></th></tr>
+        {% for r in recent %}
+          <tr>
+            <td>{{ r.map_filename or "—" }}</td>
+            <td>{{ r.rows_written }}</td>
+            <td class="muted">{{ r.when }}</td>
+            <td><a href="{{ url_for('report_page', run_id=r.run_id) }}">{{ t('recent_report') }}</a>
+                {% if r.has_output %} ·
+                  <a href="{{ url_for('download', run_id=r.run_id) }}">{{ t('recent_download') }}</a>
+                {% endif %}</td>
+          </tr>
+        {% endfor %}
+      </table>
+    {% else %}
+      <p class="muted">{{ t('recent_none') }}</p>
+    {% endif %}
+  </div>
 
   <script>
     // Submit via XHR so the upload itself gets a real, bytes-based

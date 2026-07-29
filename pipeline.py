@@ -369,18 +369,36 @@ def build_output(template_path, out_path, matched, unmatched_bases,
 
 @dataclass
 class RunReport:
-    sheets: list[SheetScan]
+    sheets: list                         # SheetScan objects or plain dicts
     bases: dict[str, list[str]]          # base -> sheets it was highlighted on
     base_skus: dict[str, list[str]]      # base -> highlighted colorway SKUs
     matched_counts: dict[str, int]       # base -> number of query rows
     matched_rows: dict[str, list[dict]]  # base -> query data pulled (trace)
     unmatched: list[str]
-    other_fills: list[tuple[str, str, str, str]]
+    other_fills: list
     rows_written: int
     ai_enabled: bool = False             # was an AI column locator supplied?
     ai_detection: list | None = None     # locator output per sheet
     ai_note: str | None = None           # why detection is missing/failed
-    ai_confirmed: bool = False           # did a human review the columns?
+    ai_confirmed: bool = False           # did a human review the run?
+    excluded: list | None = None         # bases the human unticked at review
+    base_sources: dict | None = None     # base -> ["standard"|"ai", ...]
+    query_info: dict | None = None       # stored-query metadata at scan time
+
+
+def sheet_to_dict(s: SheetScan) -> dict:
+    """JSON-serializable form of a sheet scan (drafts, report files)."""
+    return {
+        "name": s.name,
+        "sku_cells": s.sku_cells,
+        "highlighted_cells": s.highlighted_cells,
+        "highlighted_skus": sorted(s.highlighted_skus),
+        "bases": sorted(s.bases),
+        "highlighted_cell_details": s.highlighted_cell_details,
+        "other_fills": s.other_fills,
+        "ai_sku_cells": s.ai_sku_cells,
+        "ai_highlighted_cell_details": s.ai_highlighted_cell_details,
+    }
 
 
 def build_ai_columns(detection) -> dict:
@@ -408,65 +426,113 @@ def _trace_rows(rows) -> list[dict]:
     return out
 
 
-def run_pipeline(map_path, query_path, template_path, out_path,
-                 locator=None, ai_result: dict | None = None,
-                 progress=None) -> RunReport:
-    """locator (optional): callable(map_path) -> detection list, as returned
-    by sku_locator.locate. Any locator failure is reported, never fatal.
-
-    ai_result (optional) supplies pre-computed detection state instead —
-    used when detection ran earlier and a human confirmed the columns:
-    {"enabled": bool, "detection": list|None, "note": str|None,
-     "confirmed": bool}.
-    """
-    if ai_result is not None:
-        ai_enabled = bool(ai_result.get("enabled"))
-        ai_detection = ai_result.get("detection")
-        ai_note = ai_result.get("note")
-        ai_confirmed = bool(ai_result.get("confirmed"))
-    else:
-        ai_enabled = locator is not None
-        ai_confirmed = False
-        ai_detection = None
-        ai_note = None
-        if locator is not None:
-            try:
-                ai_detection = locator(map_path)
-            except Exception as exc:
-                log.warning("SKU column detection unavailable: %s", exc)
-                ai_note = str(exc)
+def scan_and_match(map_path, query_path, ai_detection=None,
+                   progress=None) -> dict:
+    """First half of a run: extract highlighted SKUs (standard scan plus any
+    AI-located columns) and pull their query rows. Returns a
+    JSON-serializable draft that the human review step can filter before the
+    output is built — matching happens HERE, so the draft is immune to the
+    stored query being replaced while the review page sits open."""
     scan = scan_sell_thru_map(map_path,
                               ai_columns=build_ai_columns(ai_detection),
                               progress=progress)
     bases = scan.bases
     matched = match_query(query_path, bases, progress=progress)
-    unmatched = sorted(set(bases) - set(matched))
-    rows_written = build_output(
-        template_path, out_path, matched, unmatched, base_sheets=bases,
-        progress=progress
-    )
+
     base_skus: dict[str, set] = {}
+    sources: dict[str, set] = {}
     for sheet in scan.sheets:
         for sku in sheet.highlighted_skus:
             base_skus.setdefault(extract_base(sku), set()).add(sku)
+        for _, _, base in sheet.highlighted_cell_details:
+            sources.setdefault(base, set()).add("standard")
+        for _, _, base in sheet.ai_highlighted_cell_details:
+            sources.setdefault(base, set()).add("ai")
+
+    return {
+        "sheets": [sheet_to_dict(s) for s in scan.sheets],
+        "bases": bases,
+        "base_skus": {b: sorted(v) for b, v in sorted(base_skus.items())},
+        "base_sources": {b: sorted(v) for b, v in sorted(sources.items())},
+        "matched": {b: [list(r) for r in rows]
+                    for b, rows in matched.items()},
+        "other_fills": scan.other_fills,
+    }
+
+
+def build_from_selection(template_path, out_path, draft, selected=None,
+                         ai_info: dict | None = None,
+                         progress=None) -> RunReport:
+    """Second half of a run: build the ProductsList workbook from a draft,
+    keeping only the bases the human left selected (None = keep all)."""
+    bases = draft["bases"]
+    if selected is None:
+        kept = set(bases)
+    else:
+        kept = set(selected) & set(bases)
+    excluded = sorted(set(bases) - kept)
+
+    matched = {b: [tuple(r) for r in rows]
+               for b, rows in draft["matched"].items() if b in kept}
+    unmatched = sorted(b for b in kept if b not in matched)
+    rows_written = build_output(
+        template_path, out_path, matched, unmatched, base_sheets=bases,
+        progress=progress)
+
+    ai_info = ai_info or {}
     report = RunReport(
-        sheets=scan.sheets,
+        sheets=draft["sheets"],
         bases=bases,
-        base_skus={b: sorted(s) for b, s in sorted(base_skus.items())},
+        base_skus=draft.get("base_skus", {}),
         matched_counts={b: len(matched[b]) for b in sorted(matched)},
         matched_rows={b: _trace_rows(matched[b]) for b in sorted(matched)},
         unmatched=unmatched,
-        other_fills=scan.other_fills,
+        other_fills=[tuple(f) for f in draft.get("other_fills", [])],
         rows_written=rows_written,
-        ai_enabled=ai_enabled,
-        ai_detection=ai_detection,
-        ai_note=ai_note,
-        ai_confirmed=ai_confirmed,
+        ai_enabled=bool(ai_info.get("enabled")),
+        ai_detection=ai_info.get("detection"),
+        ai_note=ai_info.get("note"),
+        ai_confirmed=bool(ai_info.get("confirmed")),
+        excluded=excluded,
+        base_sources=draft.get("base_sources"),
+        query_info=draft.get("query_info"),
     )
     log.info(
-        "run: sheets=%s bases=%d matched=%d unmatched=%d rows=%d other_fills=%d",
-        [(s.name, s.highlighted_cells) for s in report.sheets],
-        len(report.bases), len(report.matched_counts),
-        len(report.unmatched), report.rows_written, len(report.other_fills),
+        "run: bases=%d kept=%d matched=%d unmatched=%d excluded=%d rows=%d",
+        len(bases), len(kept), len(report.matched_counts),
+        len(report.unmatched), len(excluded), report.rows_written,
     )
     return report
+
+
+def run_pipeline(map_path, query_path, template_path, out_path,
+                 locator=None, ai_result: dict | None = None,
+                 progress=None) -> RunReport:
+    """One-shot run with every extracted SKU kept (no human filtering).
+
+    locator (optional): callable(map_path) -> detection list, as returned
+    by sku_locator.locate. Any locator failure is reported, never fatal.
+    ai_result (optional) supplies pre-computed detection state instead.
+    """
+    if ai_result is not None:
+        ai_info = {
+            "enabled": bool(ai_result.get("enabled")),
+            "detection": ai_result.get("detection"),
+            "note": ai_result.get("note"),
+            "confirmed": bool(ai_result.get("confirmed")),
+        }
+    else:
+        ai_info = {"enabled": locator is not None, "detection": None,
+                   "note": None, "confirmed": False}
+        if locator is not None:
+            try:
+                ai_info["detection"] = locator(map_path)
+            except Exception as exc:
+                log.warning("SKU column detection unavailable: %s", exc)
+                ai_info["note"] = str(exc)
+    draft = scan_and_match(map_path, query_path,
+                           ai_detection=ai_info.get("detection"),
+                           progress=progress)
+    return build_from_selection(template_path, out_path, draft,
+                                selected=None, ai_info=ai_info,
+                                progress=progress)

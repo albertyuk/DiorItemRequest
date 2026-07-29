@@ -325,102 +325,96 @@ def _verification_app(tmp_path, monkeypatch, detection):
     return app.test_client(), map_path, query_path
 
 
-def test_human_verification_flow(tmp_path, monkeypatch):
+def _upload(client, map_path, query_path, extra_query=True):
+    if extra_query:
+        with map_path.open("rb") as m, query_path.open("rb") as q:
+            return client.post(
+                "/process",
+                data={"map_file": (m, "track.xlsx"),
+                      "query_file": (q, "q.xlsx")},
+                content_type="multipart/form-data",
+            )
+    with map_path.open("rb") as m:
+        return client.post("/process", data={"map_file": (m, "track.xlsx")},
+                           content_type="multipart/form-data")
+
+
+def test_review_flow_with_ai_columns(tmp_path, monkeypatch):
+    """Scan lands on the review checkpoint; the user keeps everything."""
     detection = [{"sheet": "Track", "header_row": 1,
                   "sku_columns": [{"column": "A", "header": "SKU",
                                    "reason": "data cells hold item codes"}]}]
     client, map_path, query_path = _verification_app(
         tmp_path, monkeypatch, detection)
 
-    # phase 1: upload redirects to the verification page (a real URL)
-    with map_path.open("rb") as m, query_path.open("rb") as q:
-        resp = client.post(
-            "/process",
-            data={"map_file": (m, "track.xlsx"), "query_file": (q, "q.xlsx")},
-            content_type="multipart/form-data",
-        )
-    assert resp.status_code == 302 and "/confirm/" in resp.headers["Location"]
-    page = client.get(resp.headers["Location"])
-    assert page.status_code == 200
-    html = page.data.decode()
-    assert "Verify the AI-detected SKU columns" in html
-    assert "M0715OUQO_M900_TU" in html          # sample values shown
-    assert re.search(r'name="col"\s+value="0:0"\s+checked', html)
-    action = re.search(r'action="/process/(\d{8}_\d{6}_[0-9a-f]{6})"', html)
-    assert action, "confirmation form must post to /process/<pending_id>"
-    pending_id = action.group(1)
-
-    # phase 2: confirm the column -> background run -> confirmed report
-    resp = client.post(f"/process/{pending_id}", data={"col": "0:0"})
-    data, _ = _finish_job(client, resp)
+    data, _ = _finish_job(client, _upload(client, map_path, query_path))
     assert data["status"] == "done", data
-    html = client.get(f"/report/{data['run_id']}").data.decode()
+    assert "/review/" in data["next"]
+
+    html = client.get(data["next"]).data.decode()
+    assert "Review before building" in html
+    assert "M0715OUQO_M900_TU" in html          # AI-found SKU listed
+    assert "badge-ai" in html                    # marked as AI-sourced
+    assert "no stock" in html                    # unmatched badge shown
+    skus = re.findall(r'name="sku" value="([^"]+)"', html)
+    # only HIGHLIGHTED cells become bases (KCV536VCR_S900_T37 has no fill)
+    assert set(skus) == {"M0715OUQO_M900_TU", "641V19A1491"}
+    build = re.search(r'action="(/review/[0-9_a-f]+/build)"', html).group(1)
+
+    resp = client.post(build, data={"sku": skus}, follow_redirects=True)
+    assert resp.status_code == 200
+    html = resp.data.decode()
     assert "You reviewed and confirmed these columns" in html
     assert "641V19A1491" in html                # matched via the AI column
-    assert "M0715OUQO_M900_TU" in html          # unmatched, still traced
+    assert "Excluded at review" not in html
 
-    # the pending upload is consumed: files gone, replay 404s
+    # the draft is consumed: pending dir empty, replay 404s
     assert not list((tmp_path / "data" / "pending").glob("*"))
-    assert client.post(f"/process/{pending_id}", data={}).status_code == 404
+    assert client.post(build, data={}).status_code == 404
 
 
-def test_verification_deselect_all_falls_back_to_standard_scan(
-        tmp_path, monkeypatch):
+def test_review_deselects_specific_skus(tmp_path, monkeypatch):
+    """Unticked SKUs stay out of the workbook and are listed as excluded."""
     detection = [{"sheet": "Track", "header_row": 1,
                   "sku_columns": [{"column": "A", "header": "SKU",
                                    "reason": "codes"}]}]
     client, map_path, query_path = _verification_app(
         tmp_path, monkeypatch, detection)
-    with map_path.open("rb") as m, query_path.open("rb") as q:
-        resp = client.post(
-            "/process",
-            data={"map_file": (m, "track.xlsx"), "query_file": (q, "q.xlsx")},
-            content_type="multipart/form-data",
-        )
-    confirm = client.get(resp.headers["Location"])
-    pending_id = re.search(r'action="/process/([0-9_a-f]+)"',
-                           confirm.data.decode()).group(1)
+    data, _ = _finish_job(client, _upload(client, map_path, query_path))
+    html = client.get(data["next"]).data.decode()
+    build = re.search(r'action="(/review/[0-9_a-f]+/build)"', html).group(1)
 
-    # submit with every checkbox unticked
-    resp = client.post(f"/process/{pending_id}", data={})
-    data, _ = _finish_job(client, resp)
-    assert data["status"] == "done", data
-    html = client.get(f"/report/{data['run_id']}").data.decode()
-    assert "You unticked every detected column" in html
-    # none of the non-standard SKUs were extracted
-    assert "M0715OUQO_M900_TU" not in html
+    # keep only the base that has stock rows
+    resp = client.post(build, data={"sku": ["641V19A1491"]},
+                       follow_redirects=True)
+    html = resp.data.decode()
+    assert "wrote <strong>1</strong> rows" in html
+    assert "Excluded at review (1)" in html
+    assert "M0715OUQO_M900_TU" in html          # named in the excluded list
 
 
 @pytest.mark.parametrize("detection", [
     [],  # empty workbook
     # the realistic Claude answer for a no-SKU workbook: one entry per
-    # sheet, each with an empty sku_columns list — must NOT pause
+    # sheet, each with an empty sku_columns list — must NOT pause on review
     [{"sheet": "Track", "header_row": 1, "sku_columns": []}],
 ])
-def test_verification_skipped_when_nothing_detected(tmp_path, monkeypatch,
-                                                    detection):
+def test_review_skipped_when_nothing_found(tmp_path, monkeypatch, detection):
     client, map_path, query_path = _verification_app(
         tmp_path, monkeypatch, detection)
-    with map_path.open("rb") as m, query_path.open("rb") as q:
-        resp = client.post(
-            "/process",
-            data={"map_file": (m, "track.xlsx"), "query_file": (q, "q.xlsx")},
-            content_type="multipart/form-data",
-        )
-    # no confirmation page: straight to a processing job and the report
-    assert resp.status_code == 302
-    assert "/confirm/" not in resp.headers["Location"]
-    data, _ = _finish_job(client, resp)
+    data, _ = _finish_job(client, _upload(client, map_path, query_path))
     assert data["status"] == "done", data
-    html = client.get(f"/report/{data['run_id']}").data.decode()
+    # nothing to review: straight to the (empty) report
+    assert "/report/" in data["next"]
+    html = client.get(data["next"]).data.decode()
     assert "found no SKU columns" in html
-    assert "unticked every detected column" not in html
+    assert "unticked" not in html
 
 
-def test_confirmed_run_uses_query_snapshot_from_upload_time(
-        tmp_path, monkeypatch):
-    """Replacing the stored query while a run waits on the verification
-    page must not change the confirmed run's data."""
+def test_review_build_uses_rows_matched_at_scan_time(tmp_path, monkeypatch):
+    """Replacing the stored query while a review page sits open must not
+    change the data of the run being reviewed — matching happened at scan
+    time and the draft carries the rows."""
     detection = [{"sheet": "Track", "header_row": 1,
                   "sku_columns": [{"column": "A", "header": "SKU",
                                    "reason": "codes"}]}]
@@ -440,28 +434,19 @@ def test_confirmed_run_uses_query_snapshot_from_upload_time(
     query_b = tmp_path / "qb.xlsx"
     make_query(query_b, 987.65, 1975.3)
 
-    # user A uploads map + query A and pauses on the verification page
-    with map_path.open("rb") as m, query_a.open("rb") as q:
-        resp = client.post(
-            "/process",
-            data={"map_file": (m, "a.xlsx"), "query_file": (q, "qa.xlsx")},
-            content_type="multipart/form-data")
-    confirm = client.get(resp.headers["Location"])
-    pending_id = re.search(r'action="/process/([0-9_a-f]+)"',
-                           confirm.data.decode()).group(1)
+    # user A scans with query A and pauses on the review page
+    data, _ = _finish_job(client, _upload(client, map_path, query_a))
+    review_url = data["next"]
 
-    # meanwhile the stored query is replaced with query B
-    with map_path.open("rb") as m, query_b.open("rb") as q:
-        client.post("/process",
-                    data={"map_file": (m, "b.xlsx"),
-                          "query_file": (q, "qb.xlsx")},
-                    content_type="multipart/form-data")
+    # meanwhile user B replaces the stored query with query B
+    _finish_job(client, _upload(client, map_path, query_b))
 
-    # A's confirmed run must still be built from query A's numbers
-    resp = client.post(f"/process/{pending_id}", data={"col": "0:0"})
-    data, _ = _finish_job(client, resp)
-    assert data["status"] == "done", data
-    html = client.get(f"/report/{data['run_id']}").data.decode()
+    # A builds: the run must still carry query A's numbers
+    html = client.get(review_url).data.decode()
+    skus = re.findall(r'name="sku" value="([^"]+)"', html)
+    build = re.search(r'action="(/review/[0-9_a-f]+/build)"', html).group(1)
+    resp = client.post(build, data={"sku": skus}, follow_redirects=True)
+    html = resp.data.decode()
     assert "123.45" in html
     assert "987.65" not in html
 
@@ -571,7 +556,17 @@ def test_end_to_end_upload_and_download(tmp_path):
     assert data["status"] == "done", data
     # on a real-sized workbook the bar reports true intermediate progress
     assert any(0 < (s.get("percent") or 0) < 100 for s in statuses)
-    resp = client.get(f"/report/{data['run_id']}")
+
+    # the scan lands on the review checkpoint; keep every SKU and build
+    assert "/review/" in data["next"]
+    review_html = client.get(data["next"]).data.decode()
+    skus = re.findall(r'name="sku" value="([^"]+)"', review_html)
+    assert len(skus) == 41
+    build_url = re.search(r'action="(/review/[0-9_a-f]+/build)"',
+                          review_html).group(1)
+    resp = client.post(build_url, data={"sku": skus})
+    assert resp.status_code == 302
+    resp = client.get(resp.headers["Location"])
     assert resp.status_code == 200
     html = resp.data.decode()
     match = re.search(r"/download/(\d{8}_\d{6}_[0-9a-f]{6})", html)
@@ -612,7 +607,9 @@ def test_end_to_end_upload_and_download(tmp_path):
                            content_type="multipart/form-data")
     second, _ = _finish_job(client, resp)
     assert second["status"] == "done"
-    assert second["run_id"] != data["run_id"]
+    # a second upload gets its own review draft, distinct from the first
+    assert "/review/" in second["next"]
+    assert second["next"] != data["next"]
 
     # the report is persistent (refresh-safe) and language-switchable:
     # the same run re-renders in Chinese with the same download link

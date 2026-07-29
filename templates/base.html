@@ -5,56 +5,114 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ t('site_title') }} — {% block title %}{% endblock %}</title>
   <style>
-    body { font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC",
-           "Microsoft YaHei", sans-serif;
-           max-width: 46rem; margin: 2.6rem auto 2rem; padding: 0 1rem;
-           color: #1a1a1a; line-height: 1.5; }
-    h1 { font-size: 1.4rem; }
-    h2 { font-size: 1.1rem; margin-top: 1.8rem; }
-    h3 { font-size: 1rem; margin-top: 1.4rem; }
-    details { margin: .5rem 0 1rem; border: 1px solid #ddd;
-              border-radius: 4px; padding: .35rem .6rem; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI",
+           "PingFang SC", "Microsoft YaHei", sans-serif;
+           background: #f2f4f7; color: #1b1f24; line-height: 1.55; }
+    a { color: #155e2b; }
+    header.top { background: #fff; border-bottom: 1px solid #e3e6ea; }
+    header.top .wrap { display: flex; justify-content: space-between;
+                       align-items: center; padding-top: .7rem;
+                       padding-bottom: .7rem; gap: 1rem; }
+    .wrap { max-width: 54rem; margin: 0 auto; padding-left: 1rem;
+            padding-right: 1rem; }
+    .brand { font-weight: 700; text-decoration: none; color: #1b1f24;
+             font-size: 1.02rem; }
+    header.top nav { white-space: nowrap; }
+    header.top nav a { margin-left: .9rem; text-decoration: none;
+                       color: #4a5560; font-size: .95rem; }
+    header.top nav a.lang { border: 1px solid #d4d9de; border-radius: 6px;
+                            padding: .25rem .7rem; background: #f7f8fa; }
+    main.wrap { padding-top: 1.4rem; padding-bottom: 3rem; }
+    .steps { list-style: none; display: flex; gap: .5rem; padding: 0;
+             margin: 0 0 1.4rem; counter-reset: s; }
+    .steps li { counter-increment: s; flex: 1; text-align: center;
+                font-size: .88rem; color: #8a939c; padding: .45rem .3rem;
+                border-bottom: 3px solid #dfe3e8; }
+    .steps li::before { content: counter(s); display: inline-block;
+                        width: 1.35rem; height: 1.35rem; line-height: 1.35rem;
+                        border-radius: 50%; background: #c6ccd2; color: #fff;
+                        margin-right: .45rem; font-size: .8rem; }
+    .steps li.on { color: #155e2b; border-color: #9fce9f; }
+    .steps li.on::before { background: #2c7a44; }
+    .steps li.now { font-weight: 700; color: #124d24;
+                    border-color: #2c7a44; }
+    .card { background: #fff; border: 1px solid #e3e6ea; border-radius: 10px;
+            padding: 1.1rem 1.2rem; margin: 0 0 1.1rem;
+            box-shadow: 0 1px 2px rgba(16,24,40,.04); }
+    h2 { font-size: 1.15rem; margin: .1rem 0 .6rem; }
+    h3 { font-size: 1rem; margin: 1.2rem 0 .4rem; }
+    .card > h3:first-child { margin-top: .1rem; }
+    table { border-collapse: collapse; width: 100%; margin: .6rem 0;
+            font-size: .92rem; }
+    th { text-align: left; background: #f7f8fa; color: #4a5560;
+         font-weight: 600; font-size: .85rem; }
+    th, td { border-bottom: 1px solid #edf0f3; padding: .45rem .6rem;
+             vertical-align: top; }
+    .muted { color: #69737d; font-size: .9rem; }
+    .ok { background: #e9f6ec; border: 1px solid #b5dcbf;
+          padding: .7rem .9rem; border-radius: 8px; margin: 0 0 1rem; }
+    .warn { background: #fff6e0; border: 1px solid #eed48a;
+            padding: .7rem .9rem; border-radius: 8px; margin: 0 0 1rem; }
+    .error { background: #fdecea; border: 1px solid #e5a09a;
+             padding: .7rem .9rem; border-radius: 8px; margin: 0 0 1rem; }
+    .badge { display: inline-block; font-size: .74rem; padding: .05rem .5rem;
+             border-radius: 99px; border: 1px solid; vertical-align: middle; }
+    .badge-warn { color: #8a5b00; background: #fff6e0; border-color: #eed48a; }
+    .badge-ai { color: #4c3ba0; background: #efedff; border-color: #c9c2f2; }
+    button, a.button { background: #2c7a44; color: #fff; border: 0;
+             border-radius: 8px; font-size: 1rem; padding: .55rem 1.4rem;
+             cursor: pointer; text-decoration: none; display: inline-block; }
+    button:hover, a.button:hover { background: #256a3a; }
+    button:disabled { opacity: .55; cursor: wait; }
+    button.btn-quiet, a.btn-quiet { background: #f0f2f4; color: #333c44;
+             border: 1px solid #d4d9de; font-size: .88rem;
+             padding: .35rem .8rem; border-radius: 7px; cursor: pointer;
+             text-decoration: none; display: inline-block; }
+    button.btn-quiet:hover, a.btn-quiet:hover { background: #e6e9ec; }
+    .toolbar { display: flex; gap: .55rem; align-items: center;
+               flex-wrap: wrap; margin: .4rem 0 .6rem; }
+    .toolbar .spacer { flex: 1; }
+    form.run label { display: block; margin: 1rem 0 .25rem;
+                     font-weight: 600; }
+    #spinner { display: none; margin-top: .8rem; }
+    .bar-track { width: 100%; height: 14px; background: #e8ebee;
+                 border: 1px solid #d4d9de; border-radius: 7px;
+                 overflow: hidden; margin: .8rem 0 .4rem; }
+    .bar-fill { height: 100%; width: 0%; background: #2c7a44;
+                transition: width .3s ease; }
+    details { margin: .5rem 0 1rem; border: 1px solid #e3e6ea;
+              border-radius: 8px; padding: .35rem .6rem; background: #fff; }
     details summary { cursor: pointer; font-size: .92rem; }
     details table { margin-top: .5rem; }
-    table { border-collapse: collapse; width: 100%; margin: .6rem 0; }
-    th, td { border: 1px solid #ccc; padding: .3rem .55rem; text-align: left;
-             font-size: .92rem; }
-    th { background: #f4f4f4; }
-    .muted { color: #666; font-size: .9rem; }
-    .warn { background: #fff3cd; border: 1px solid #e0c76b;
-            padding: .6rem .8rem; border-radius: 4px; }
-    .ok { background: #e7f5e7; border: 1px solid #9fce9f;
-          padding: .6rem .8rem; border-radius: 4px; }
-    .error { background: #fdecea; border: 1px solid #e5a09a;
-             padding: .6rem .8rem; border-radius: 4px; }
-    form.run label { display: block; margin: 1rem 0 .25rem; font-weight: 600; }
-    button { font-size: 1rem; padding: .5rem 1.4rem; margin-top: 1.2rem;
-             cursor: pointer; }
-    button:disabled { cursor: wait; opacity: .6; }
-    #spinner { display: none; margin-top: .8rem; }
-    .bar-track { width: 100%; height: 14px; background: #eee;
-                 border: 1px solid #ccc; border-radius: 7px;
-                 overflow: hidden; margin: .8rem 0 .4rem; }
-    .bar-fill { height: 100%; width: 0%; background: #1a5c1a;
-                transition: width .3s ease; }
-    code { background: #f4f4f4; padding: .1rem .3rem; border-radius: 3px; }
-    a.button { display: inline-block; background: #1a5c1a; color: #fff;
-               padding: .55rem 1.3rem; border-radius: 4px;
-               text-decoration: none; margin: .6rem 0; }
+    code { background: #f0f2f4; padding: .1rem .3rem; border-radius: 3px; }
     ul.compact { margin: .3rem 0; padding-left: 1.3rem; }
-    a.lang { position: absolute; top: .8rem; left: 1rem; font-size: .92rem;
-             text-decoration: none; border: 1px solid #ccc;
-             border-radius: 4px; padding: .25rem .7rem; color: #1a1a1a;
-             background: #f8f8f8; }
-    a.lang:hover { background: #eee; }
+    ol.tut li { margin: .45rem 0; }
   </style>
 </head>
 <body>
   {% set other_lang = 'zh' if lang == 'en' else 'en' %}
   {% set lang_target = (request.path if request.method == 'GET'
                         else url_for('index')) ~ '?lang=' ~ other_lang %}
-  <a class="lang" href="{{ lang_target }}" rel="nofollow">{{ t('lang_switch') }}</a>
-  <h1>{{ t('site_title') }}</h1>
-  {% block content %}{% endblock %}
+  <header class="top">
+    <div class="wrap">
+      <a class="brand" href="{{ url_for('index') }}">{{ t('site_title') }}</a>
+      <nav>
+        <a href="{{ url_for('index') }}">{{ t('nav_home') }}</a>
+        <a href="{{ url_for('help_page') }}">{{ t('nav_help') }}</a>
+        <a class="lang" href="{{ lang_target }}" rel="nofollow">{{ t('lang_switch') }}</a>
+      </nav>
+    </div>
+  </header>
+  <main class="wrap">
+    {% if step %}
+      <ol class="steps">
+        <li class="{{ 'on' if step >= 1 }} {{ 'now' if step == 1 }}">{{ t('step_upload') }}</li>
+        <li class="{{ 'on' if step >= 2 }} {{ 'now' if step == 2 }}">{{ t('step_review') }}</li>
+        <li class="{{ 'on' if step >= 3 }} {{ 'now' if step == 3 }}">{{ t('step_report') }}</li>
+      </ol>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
 </body>
 </html>

@@ -1,8 +1,7 @@
 {% extends "base.html" %}
+{% set step = 3 %}
 {% block title %}{{ t('page_report') }}{% endblock %}
 {% block content %}
-  <p><a href="{{ url_for('index') }}">{{ t('new_run') | safe }}</a></p>
-
   <div class="ok">
     {{ t('processed_summary',
          map=map_filename | e,
@@ -10,8 +9,26 @@
          matched=report.matched_counts | length,
          total=report.bases | length) | safe }}
   </div>
+  {% if report.query_info and report.query_info.filename %}
+    <p class="muted">{{ t('query_used',
+                         name=report.query_info.filename | e,
+                         rows="{:,}".format(report.query_info.rows),
+                         time=report.query_info.uploaded_at | e) | safe }}</p>
+  {% endif %}
   <p><a class="button" href="{{ url_for('download', run_id=run_id) }}">
-    {{ t('download_label', name=download_name) }}</a></p>
+    {{ t('download_label', name=download_name) }}</a>
+    <a class="btn-quiet" href="{{ url_for('index') }}"
+       style="margin-left:.6rem">{{ t('new_run') | safe }}</a></p>
+
+  {% if report.excluded %}
+    <h2>{{ t('excluded_heading', n=report.excluded | length) }}</h2>
+    <div class="warn">
+      {{ t('excluded_note') }}
+      <ul class="compact">
+        {% for base in report.excluded %}<li>{{ base }}</li>{% endfor %}
+      </ul>
+    </div>
+  {% endif %}
 
   <h2>{{ t('steps_heading') }}</h2>
 

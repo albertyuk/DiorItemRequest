@@ -1,14 +1,17 @@
 {% extends "base.html" %}
+{% set step = 2 %}
 {% block title %}{{ t('page_progress') }}{% endblock %}
 {% block content %}
-  <h2>{{ t('progress_heading') }}</h2>
-  <div class="bar-track"><div class="bar-fill" id="bar"></div></div>
-  <p class="muted" id="stage">{{ t('stage_start') }}</p>
-  <div class="error" id="err" style="display:none"></div>
-  <p id="back" style="display:none">
-    <a href="{{ url_for('index') }}">{{ t('back_to_upload') | safe }}</a></p>
-  <noscript><div class="warn">JavaScript is required to follow progress.
-    / 需要启用 JavaScript 才能显示进度。</div></noscript>
+  <div class="card">
+    <h2>{{ t('progress_heading') }}</h2>
+    <div class="bar-track"><div class="bar-fill" id="bar"></div></div>
+    <p class="muted" id="stage">{{ t('stage_start') }}</p>
+    <div class="error" id="err" style="display:none"></div>
+    <p id="back" style="display:none">
+      <a href="{{ url_for('index') }}">{{ t('back_to_upload') | safe }}</a></p>
+    <noscript><div class="warn">JavaScript is required to follow progress.
+      / 需要启用 JavaScript 才能显示进度。</div></noscript>
+  </div>
   <script>
     const labels = {{ {'start': t('stage_start'), 'scan': t('stage_scan'),
                        'match': t('stage_match'),
@@ -16,7 +19,6 @@
     const errTemplate = {{ t('err_map_failed', detail='__DETAIL__') | tojson }};
     const lostMsg = {{ t('progress_lost') | tojson }};
     const statusUrl = {{ url_for('progress_status', job_id=job_id) | tojson }};
-    const reportUrl = {{ url_for('report_page', run_id='RUNID') | tojson }};
     const bar = document.getElementById('bar');
     const stage = document.getElementById('stage');
 
@@ -35,7 +37,7 @@
         const d = await r.json();
         if (d.status === 'done') {
           bar.style.width = '100%';
-          window.location = reportUrl.replace('RUNID', d.run_id);
+          window.location = d.next;
           return;
         }
         if (d.status === 'error') {

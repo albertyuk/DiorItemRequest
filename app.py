@@ -9,7 +9,6 @@ import json
 import logging
 import os
 import re
-import shutil
 import threading
 import time
 import uuid
@@ -45,31 +44,22 @@ def report_to_dict(report: "pipeline.RunReport", map_filename: str) -> dict:
     re-rendered later (and in either language)."""
     return {
         "map_filename": map_filename,
-        "sheets": [
-            {
-                "name": s.name,
-                "sku_cells": s.sku_cells,
-                "highlighted_cells": s.highlighted_cells,
-                "highlighted_skus": sorted(s.highlighted_skus),
-                "bases": sorted(s.bases),
-                "highlighted_cell_details": s.highlighted_cell_details,
-                "other_fills": s.other_fills,
-                "ai_sku_cells": s.ai_sku_cells,
-                "ai_highlighted_cell_details": s.ai_highlighted_cell_details,
-            }
-            for s in report.sheets
-        ],
+        "sheets": [s if isinstance(s, dict) else pipeline.sheet_to_dict(s)
+                   for s in report.sheets],
         "ai_enabled": report.ai_enabled,
         "ai_detection": report.ai_detection,
         "ai_note": report.ai_note,
         "ai_confirmed": report.ai_confirmed,
         "bases": report.bases,
         "base_skus": report.base_skus,
+        "base_sources": report.base_sources,
         "matched_counts": report.matched_counts,
         "matched_rows": report.matched_rows,
         "unmatched": report.unmatched,
+        "excluded": report.excluded or [],
         "other_fills": report.other_fills,
         "rows_written": report.rows_written,
+        "query_info": report.query_info,
     }
 
 
@@ -135,14 +125,31 @@ def create_app(data_dir: Path | str | None = None,
         s = STRINGS.get(lang, STRINGS["en"]).get(key) or STRINGS["en"][key]
         return s.format(**fmt) if fmt else s
 
-    def prune_pending() -> None:
-        files = sorted(pending_dir.glob("map_*.xlsx"),
+    def prune_drafts() -> None:
+        files = sorted(pending_dir.glob("draft_*.json"),
                        key=lambda p: p.stat().st_mtime, reverse=True)
         for stale in files[KEEP_PENDING:]:
-            pending_id = stale.stem[len("map_"):]
-            (pending_dir / f"pending_{pending_id}.json").unlink(missing_ok=True)
-            (pending_dir / f"query_{pending_id}.xlsx").unlink(missing_ok=True)
             stale.unlink(missing_ok=True)
+
+    def recent_runs(limit: int = 10) -> list[dict]:
+        """Newest stored runs for the front page: link report + download."""
+        runs = []
+        for path in sorted(outputs_dir.glob("report_*.json"),
+                           key=lambda p: p.stat().st_mtime, reverse=True)[:limit]:
+            run_id = path.stem[len("report_"):]
+            try:
+                data = json.loads(path.read_text())
+            except (OSError, ValueError):
+                continue
+            runs.append({
+                "run_id": run_id,
+                "map_filename": data.get("map_filename", ""),
+                "rows_written": data.get("rows_written", 0),
+                "when": datetime.fromtimestamp(path.stat().st_mtime)
+                        .strftime("%Y-%m-%d %H:%M"),
+                "has_output": (outputs_dir / f"ProductsList_{run_id}.xlsx").exists(),
+            })
+        return runs
 
     def error_page(key: str, status: int = 400, **fmt):
         message = tr(key, **fmt)
@@ -173,12 +180,31 @@ def create_app(data_dir: Path | str | None = None,
                            and job.get("status") != "running"]:
                 del jobs[job_id]
 
-    def _run_job(job_id: str, map_path: Path, map_filename: str,
-                 ai_result: dict, query_snapshot: Path | None) -> None:
+    def _build_and_store(draft: dict, selected, reviewed: bool) -> str:
+        """Build the workbook + report from a draft. Fast — runs in-request."""
+        run_id = _new_id()
+        out_path = outputs_dir / f"ProductsList_{run_id}.xlsx"
+        ai = draft.get("ai") or {}
+        report = pipeline.build_from_selection(
+            template_path, out_path, draft, selected=selected,
+            ai_info={"enabled": ai.get("enabled"),
+                     "detection": ai.get("detection"),
+                     "note": ai.get("note"),
+                     "confirmed": reviewed and bool(ai.get("detection"))})
+        # Persist the run report next to the output so the report page is
+        # refresh-safe and re-renderable in either language.
+        (outputs_dir / f"report_{run_id}.json").write_text(
+            json.dumps(report_to_dict(report, draft.get("map_filename", "")),
+                       ensure_ascii=False))
+        prune_outputs()
+        return run_id
+
+    def _run_scan_job(job_id: str, map_path: Path, map_filename: str,
+                      ai: dict) -> None:
+        """Scan + match in the background; the human review filters the
+        result before anything is built."""
         job = jobs[job_id]
-        # stage -> (start%, end%) of the overall bar, weighted by how long
-        # each stage takes on real workbooks
-        weights = {"scan": (2, 60), "match": (60, 92), "write": (92, 99)}
+        weights = {"scan": (2, 60), "match": (60, 96)}
 
         def progress(stage, done, total):
             lo, hi = weights.get(stage, (0, 2))
@@ -186,45 +212,46 @@ def create_app(data_dir: Path | str | None = None,
             job["stage"] = stage
             job["percent"] = round(lo + frac * (hi - lo))
 
-        def cleanup():
-            map_path.unlink(missing_ok=True)
-            if query_snapshot is not None:
-                query_snapshot.unlink(missing_ok=True)
-
-        run_id = _new_id()
-        out_path = outputs_dir / f"ProductsList_{run_id}.xlsx"
         try:
-            report = pipeline.run_pipeline(
-                map_path, query_snapshot or stored_query, template_path,
-                out_path, ai_result=ai_result, progress=progress)
-            # Persist the run report next to the output so the report page
-            # is refresh-safe and re-renderable in either language.
-            (outputs_dir / f"report_{run_id}.json").write_text(
-                json.dumps(report_to_dict(report, map_filename),
-                           ensure_ascii=False))
-            prune_outputs()
+            draft = pipeline.scan_and_match(
+                map_path, stored_query, ai_detection=ai.get("detection"),
+                progress=progress)
+            draft.update({
+                "map_filename": map_filename,
+                "ai": ai,
+                "query_info": read_query_meta(),
+            })
+            if draft["bases"]:
+                draft_id = _new_id()
+                (pending_dir / f"draft_{draft_id}.json").write_text(
+                    json.dumps(draft, ensure_ascii=False))
+                prune_drafts()
+                next_url = f"/review/{draft_id}"
+            else:
+                # nothing to review — build the (empty) output directly
+                run_id = _build_and_store(draft, selected=None,
+                                          reviewed=False)
+                next_url = f"/report/{run_id}"
         except Exception as exc:
             # Malformed maps fail in many shapes (BadZipFile, XML
             # ParseError, KeyError, ...) — all must surface as a friendly
             # message on the progress page, never a dead bar.
-            out_path.unlink(missing_ok=True)
             log.exception("processing failed")
-            cleanup()
+            map_path.unlink(missing_ok=True)
             job.update(status="error", detail=str(exc))
             return
-        cleanup()  # before flipping status: pollers may react instantly
-        job.update(status="done", percent=100, run_id=run_id)
+        map_path.unlink(missing_ok=True)  # the map is not needed after scan
+        job.update(status="done", percent=100, next=next_url)
 
-    def start_job(map_path: Path, map_filename: str, ai_result: dict,
-                  query_snapshot: Path | None = None) -> str:
+    def start_scan_job(map_path: Path, map_filename: str, ai: dict) -> str:
         purge_jobs()
         job_id = _new_id()
         with jobs_lock:
             jobs[job_id] = {"status": "running", "percent": 0,
                             "stage": "start", "created": time.time()}
         threading.Thread(
-            target=_run_job, daemon=True,
-            args=(job_id, map_path, map_filename, ai_result, query_snapshot),
+            target=_run_scan_job, daemon=True,
+            args=(job_id, map_path, map_filename, ai),
         ).start()
         return job_id
 
@@ -271,7 +298,8 @@ def create_app(data_dir: Path | str | None = None,
 
     @app.get("/")
     def index():
-        return render_template("index.html", query_meta=read_query_meta())
+        return render_template("index.html", query_meta=read_query_meta(),
+                               recent=recent_runs())
 
     @app.get("/help")
     def help_page():
@@ -310,100 +338,74 @@ def create_app(data_dir: Path | str | None = None,
             map_tmp.unlink(missing_ok=True)
             return error_page("err_map_failed",
                               detail="not a valid .xlsx workbook")
-        ai_result = {"enabled": False, "detection": None, "note": None,
-                     "confirmed": False}
+        ai = {"enabled": False, "detection": None, "note": None,
+              "samples": {}}
         if sku_locator.is_configured():
-            ai_result["enabled"] = True
+            ai["enabled"] = True
             try:
                 previews = sku_locator.build_previews(map_tmp)
                 detection = sku_locator.locate_from_previews(previews)
+                # sheets with no SKU columns are already dropped; keep only
+                # entries that carry actual columns (defense in depth)
+                detection = [e for e in detection if e.get("sku_columns")]
+                ai["detection"] = detection
+                ai["samples"] = sku_locator.column_samples(previews, detection)
             except Exception as exc:
                 log.warning("SKU column detection unavailable: %s", exc)
-                ai_result["note"] = str(exc)
-            else:
-                # Defense in depth: _normalize already drops sheets with no
-                # SKU columns, but never pause verification unless there is
-                # at least one actual column to verify.
-                detection = [e for e in detection if e.get("sku_columns")]
-                if detection:
-                    # Human verification: park the upload and show the
-                    # detected columns (with sample values) before the
-                    # heavy processing run uses them.
-                    pending_id = _new_id()
-                    map_tmp.replace(pending_dir / f"map_{pending_id}.xlsx")
-                    # Snapshot the query too: the confirmed run must use
-                    # the query that was current at upload time, even if
-                    # someone replaces the stored one during the pause.
-                    shutil.copyfile(stored_query,
-                                    pending_dir / f"query_{pending_id}.xlsx")
-                    samples = sku_locator.column_samples(previews, detection)
-                    (pending_dir / f"pending_{pending_id}.json").write_text(
-                        json.dumps({
-                            "map_filename": map_file.filename,
-                            "detection": detection,
-                            "samples": samples,
-                        }, ensure_ascii=False))
-                    prune_pending()
-                    return respond_next(
-                        url_for("confirm_page", pending_id=pending_id))
-                ai_result["detection"] = detection  # []: nothing detected
+                ai["note"] = str(exc)
 
-        job_id = start_job(map_tmp, map_file.filename, ai_result)
+        job_id = start_scan_job(map_tmp, map_file.filename, ai)
         return respond_next(url_for("progress_page", job_id=job_id))
 
-    @app.get("/confirm/<pending_id>")
-    def confirm_page(pending_id: str):
-        """The human-verification page — a real URL, so it is refresh-safe
-        and reachable after the upload's POST/redirect."""
-        if not RUN_ID_RE.match(pending_id):
+    @app.get("/review/<draft_id>")
+    def review_page(draft_id: str):
+        """The single human checkpoint: AI-detected columns and every
+        extracted SKU, each individually selectable before the build."""
+        if not RUN_ID_RE.match(draft_id):
             abort(404)
-        meta_path = pending_dir / f"pending_{pending_id}.json"
-        if not (meta_path.exists()
-                and (pending_dir / f"map_{pending_id}.xlsx").exists()):
+        draft_path = pending_dir / f"draft_{draft_id}.json"
+        if not draft_path.exists():
             abort(404)
-        meta = json.loads(meta_path.read_text())
+        draft = json.loads(draft_path.read_text())
+        entries = []
+        for base, sheets in draft.get("bases", {}).items():
+            entries.append({
+                "base": base,
+                "skus": draft.get("base_skus", {}).get(base, []),
+                "sheets": sheets,
+                "sources": draft.get("base_sources", {}).get(base, []),
+                "rows": len(draft.get("matched", {}).get(base, [])),
+            })
+        entries.sort(key=lambda e: (e["rows"] == 0, e["base"]))
+        ai = draft.get("ai") or {}
         return render_template(
-            "confirm.html",
-            pending_id=pending_id,
-            map_filename=meta.get("map_filename", ""),
-            detection=meta.get("detection", []),
-            samples=meta.get("samples", {}),
+            "review.html",
+            draft_id=draft_id,
+            map_filename=draft.get("map_filename", ""),
+            entries=entries,
+            total_rows=sum(e["rows"] for e in entries),
+            matched_count=sum(1 for e in entries if e["rows"]),
+            ai=ai,
+            sheets=draft.get("sheets", []),
+            query_info=draft.get("query_info"),
         )
 
-    @app.post("/process/<pending_id>")
-    def process_confirm(pending_id: str):
-        """Phase 2: the human reviewed the AI-detected columns; run the
-        pipeline with only the columns they kept ticked."""
-        if not RUN_ID_RE.match(pending_id):
+    @app.post("/review/<draft_id>/build")
+    def review_build(draft_id: str):
+        """Build the workbook from the draft, keeping only selected SKUs."""
+        if not RUN_ID_RE.match(draft_id):
             abort(404)
-        map_path = pending_dir / f"map_{pending_id}.xlsx"
-        meta_path = pending_dir / f"pending_{pending_id}.json"
-        if not (map_path.exists() and meta_path.exists()):
+        draft_path = pending_dir / f"draft_{draft_id}.json"
+        if not draft_path.exists():
             abort(404)
-        meta = json.loads(meta_path.read_text())
-        meta_path.unlink(missing_ok=True)
-
-        selected = set(request.form.getlist("col"))
-        confirmed = []
-        for si, entry in enumerate(meta.get("detection", [])):
-            kept = [col for ci, col in enumerate(entry["sku_columns"])
-                    if f"{si}:{ci}" in selected]
-            if kept:
-                confirmed.append({**entry, "sku_columns": kept})
-        log.info("column verification %s: kept %s", pending_id,
-                 [(e["sheet"], [c["column"] for c in e["sku_columns"]])
-                  for e in confirmed])
-        query_snapshot = pending_dir / f"query_{pending_id}.xlsx"
-        snapshot = query_snapshot if query_snapshot.exists() else None
-        if snapshot is None and not stored_query.exists():
-            map_path.unlink(missing_ok=True)
-            return error_page("err_no_query")
-        job_id = start_job(
-            map_path, meta.get("map_filename", ""),
-            {"enabled": True, "detection": confirmed, "note": None,
-             "confirmed": True},
-            query_snapshot=snapshot)
-        return respond_next(url_for("progress_page", job_id=job_id))
+        draft = json.loads(draft_path.read_text())
+        draft_path.unlink(missing_ok=True)  # single-use: replays 404
+        selected = request.form.getlist("sku")
+        log.info("review %s: kept %d of %d bases", draft_id,
+                 len(set(selected) & set(draft.get("bases", {}))),
+                 len(draft.get("bases", {})))
+        run_id = _build_and_store(draft, selected=selected, reviewed=True)
+        return redirect(url_for("report_page", run_id=run_id))
 
     @app.get("/progress/<job_id>")
     def progress_page(job_id: str):
@@ -417,7 +419,7 @@ def create_app(data_dir: Path | str | None = None,
         if job is None:
             return {"status": "lost"}, 404
         return {key: job.get(key)
-                for key in ("status", "percent", "stage", "run_id", "detail")}
+                for key in ("status", "percent", "stage", "next", "detail")}
 
     @app.get("/report/<run_id>")
     def report_page(run_id: str):

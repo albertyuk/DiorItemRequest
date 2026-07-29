@@ -71,18 +71,39 @@ STRINGS = {
                               "columns before processing."),
         "ai_all_deselected": ("You unticked every detected column, so only "
                               "the standard scan was used."),
-        "page_confirm": "verify SKU columns",
-        "confirm_heading": "Verify the AI-detected SKU columns",
-        "confirm_intro": ("Claude analyzed <strong>{map}</strong> and "
-                          "believes the columns below contain SKUs. Check "
-                          "the sample values: keep a column ticked only if "
-                          "those really are SKU codes. Unticked columns are "
-                          "ignored, and the standard pattern scan always "
-                          "runs either way — nothing has been processed "
-                          "yet."),
-        "th_use": "Use", "th_samples": "Sample values",
-        "confirm_btn": "Looks right — process",
+        "th_samples": "Sample values",
         "confirm_cancel": "Cancel and start over",
+        "nav_home": "Home", "nav_help": "Tutorial",
+        "step_upload": "Upload", "step_review": "Review",
+        "step_report": "Report",
+        "page_upload_heading": "New run",
+        "page_review": "review",
+        "review_heading": "Review before building",
+        "review_intro": ("Everything extracted from <strong>{map}</strong> "
+                         "is listed below. Untick any SKU that should not go "
+                         "into the ProductsList, then build — nothing is "
+                         "written until you do."),
+        "review_ai_intro": ("These columns were AI-detected; their SKUs are "
+                            "included in the list below with a purple badge. "
+                            "Judge them by the sample values."),
+        "review_sku_heading": "Extracted SKUs",
+        "th_colorways": "Highlighted colorway(s)",
+        "th_stock_rows": "Stock rows",
+        "badge_no_stock": "no stock", "badge_ai": "AI",
+        "sel_all": "Select all", "sel_none": "Select none",
+        "sel_matched": "Only with stock",
+        "review_counter": "{n} of {m} SKUs selected",
+        "btn_build": "Build ProductsList ({rows} rows)",
+        "recent_heading": "Recent runs",
+        "recent_none": "No runs yet — the last 10 stay downloadable here.",
+        "recent_map": "Map", "recent_when": "When",
+        "recent_report": "report", "recent_download": "download",
+        "th_rows_written": "Rows",
+        "query_used": ("Stock query used: <strong>{name}</strong> — {rows} "
+                       "rows, uploaded {time}."),
+        "excluded_heading": "Excluded at review ({n})",
+        "excluded_note": ("These highlighted SKUs were unticked on the "
+                          "review page and left out of the workbook."),
         "page_progress": "processing",
         "progress_heading": "Processing — this page updates itself",
         "stage_start": "Starting…",
@@ -213,15 +234,36 @@ STRINGS = {
         "ai_none": "AI 检查了各工作表的表头，没有发现标准扫描之外的 SKU 列。",
         "ai_confirmed_note": "&#10003; 这些列已经过你的人工确认，才用于本次处理。",
         "ai_all_deselected": "你取消了所有识别出的列，本次仅使用标准扫描。",
-        "page_confirm": "确认 SKU 列",
-        "confirm_heading": "请确认 AI 识别的 SKU 列",
-        "confirm_intro": ("Claude 分析了 <strong>{map}</strong>，"
-                          "认为下列各列包含 SKU。请核对示例值：只有确实是 SKU "
-                          "编码的列才保持勾选；取消勾选的列会被忽略。无论如何，"
-                          "标准扫描都会照常进行 — 目前还没有开始正式处理。"),
-        "th_use": "使用", "th_samples": "示例值",
-        "confirm_btn": "确认无误，开始处理",
+        "th_samples": "示例值",
         "confirm_cancel": "取消并返回",
+        "nav_home": "首页", "nav_help": "使用教程",
+        "step_upload": "上传", "step_review": "确认",
+        "step_report": "报告",
+        "page_upload_heading": "新建处理",
+        "page_review": "确认",
+        "review_heading": "生成前确认",
+        "review_intro": ("以下是从 <strong>{map}</strong> 中提取到的全部内容。"
+                         "取消勾选不需要写入 ProductsList 的款号，再点击生成 — "
+                         "在你确认之前不会生成任何文件。"),
+        "review_ai_intro": ("以下列由 AI 识别，其中的 SKU 已列入下方清单并带有"
+                            "紫色标记。请根据示例值判断是否正确。"),
+        "review_sku_heading": "提取到的 SKU",
+        "th_colorways": "标黄颜色款",
+        "th_stock_rows": "库存行数",
+        "badge_no_stock": "无库存", "badge_ai": "AI",
+        "sel_all": "全选", "sel_none": "全不选",
+        "sel_matched": "仅选有库存",
+        "review_counter": "已选 {n} / {m} 个款号",
+        "btn_build": "生成 ProductsList（{rows} 行）",
+        "recent_heading": "最近的运行",
+        "recent_none": "还没有运行记录 — 最近 10 次会保留在这里供下载。",
+        "recent_map": "文件", "recent_when": "时间",
+        "recent_report": "报告", "recent_download": "下载",
+        "th_rows_written": "行数",
+        "query_used": ("使用的库存查询表：<strong>{name}</strong>，"
+                       "共 {rows} 行，上传于 {time}。"),
+        "excluded_heading": "确认时排除的款号（{n} 个）",
+        "excluded_note": "以下标黄款号在确认页被取消勾选，未写入工作簿。",
         "page_progress": "正在处理",
         "progress_heading": "正在处理 — 本页会自动更新进度",
         "stage_start": "正在启动…",
