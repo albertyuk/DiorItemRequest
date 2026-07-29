@@ -148,11 +148,16 @@ def _normalize(raw_sheets, known_sheets) -> list[dict]:
                 "header": col.get("header"),
                 "reason": col.get("reason", ""),
             })
-        detection.append({
-            "sheet": name,
-            "header_row": header_row,
-            "sku_columns": columns,
-        })
+        # Sheets without SKU columns are dropped entirely: the model is
+        # instructed to return them with an empty sku_columns list, and
+        # keeping such entries would make "no columns found" look truthy
+        # to callers (triggering a pointless verification page).
+        if columns:
+            detection.append({
+                "sheet": name,
+                "header_row": header_row,
+                "sku_columns": columns,
+            })
     return detection
 
 

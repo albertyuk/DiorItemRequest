@@ -260,6 +260,12 @@ def test_locator_previews_and_normalization(tmp_path):
     assert normalized == [{"sheet": "Track", "header_row": 1,
                            "sku_columns": [{"column": "A", "header": "SKU",
                                             "reason": "ok"}]}]
+    # sheets where the model found no SKU columns are dropped entirely —
+    # the realistic "nothing found" answer is per-sheet empty lists, and
+    # it must not read as a positive detection
+    assert sku_locator._normalize(
+        [{"sheet": "Track", "header_row": 2, "sku_columns": []}],
+        ["Track"]) == []
 
 
 def _verification_app(tmp_path, monkeypatch, detection):
@@ -345,9 +351,16 @@ def test_verification_deselect_all_falls_back_to_standard_scan(
     assert "M0715OUQO_M900_TU" not in html
 
 
-def test_verification_skipped_when_nothing_detected(tmp_path, monkeypatch):
+@pytest.mark.parametrize("detection", [
+    [],  # empty workbook
+    # the realistic Claude answer for a no-SKU workbook: one entry per
+    # sheet, each with an empty sku_columns list — must NOT pause
+    [{"sheet": "Track", "header_row": 1, "sku_columns": []}],
+])
+def test_verification_skipped_when_nothing_detected(tmp_path, monkeypatch,
+                                                    detection):
     client, map_path, query_path = _verification_app(
-        tmp_path, monkeypatch, detection=[])
+        tmp_path, monkeypatch, detection)
     with map_path.open("rb") as m, query_path.open("rb") as q:
         resp = client.post(
             "/process",
@@ -355,11 +368,60 @@ def test_verification_skipped_when_nothing_detected(tmp_path, monkeypatch):
             content_type="multipart/form-data",
             follow_redirects=True,
         )
-    # no confirmation page: straight to the report
+    # no confirmation page: straight to the report, with the honest message
     assert resp.status_code == 200
     html = resp.data.decode()
     assert "Verify the AI-detected" not in html
     assert "found no SKU columns" in html
+    assert "unticked every detected column" not in html
+
+
+def test_confirmed_run_uses_query_snapshot_from_upload_time(
+        tmp_path, monkeypatch):
+    """Replacing the stored query while a run waits on the verification
+    page must not change the confirmed run's data."""
+    detection = [{"sheet": "Track", "header_row": 1,
+                  "sku_columns": [{"column": "A", "header": "SKU",
+                                   "reason": "codes"}]}]
+    client, map_path, _ = _verification_app(tmp_path, monkeypatch, detection)
+
+    def make_query(path, cost, retail):
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "query"
+        ws.append(pipeline.QUERY_HEADERS)
+        ws.append(["3617000000001", "641V19A1491 - X8300 - T36", "d", "dep",
+                   "s", None, None, None, 1, cost, retail, "t", "p"])
+        wb.save(path)
+
+    query_a = tmp_path / "qa.xlsx"
+    make_query(query_a, 123.45, 246.9)
+    query_b = tmp_path / "qb.xlsx"
+    make_query(query_b, 987.65, 1975.3)
+
+    # user A uploads map + query A and pauses on the verification page
+    with map_path.open("rb") as m, query_a.open("rb") as q:
+        resp = client.post(
+            "/process",
+            data={"map_file": (m, "a.xlsx"), "query_file": (q, "qa.xlsx")},
+            content_type="multipart/form-data")
+    pending_id = re.search(r'action="/process/([0-9_a-f]+)"',
+                           resp.data.decode()).group(1)
+
+    # meanwhile the stored query is replaced with query B
+    with map_path.open("rb") as m, query_b.open("rb") as q:
+        client.post("/process",
+                    data={"map_file": (m, "b.xlsx"),
+                          "query_file": (q, "qb.xlsx")},
+                    content_type="multipart/form-data")
+
+    # A's confirmed run must still be built from query A's numbers
+    resp = client.post(f"/process/{pending_id}", data={"col": "0:0"},
+                       follow_redirects=True)
+    html = resp.data.decode()
+    assert resp.status_code == 200
+    assert "123.45" in html
+    assert "987.65" not in html
 
 
 @pytest.mark.skipif(

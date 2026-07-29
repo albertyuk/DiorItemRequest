@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -137,22 +138,26 @@ def create_app(data_dir: Path | str | None = None,
         for stale in files[KEEP_PENDING:]:
             pending_id = stale.stem[len("map_"):]
             (pending_dir / f"pending_{pending_id}.json").unlink(missing_ok=True)
+            (pending_dir / f"query_{pending_id}.xlsx").unlink(missing_ok=True)
             stale.unlink(missing_ok=True)
 
     def error_page(key: str, status: int = 400, **fmt):
         return render_template("error.html", message=tr(key, **fmt)), status
 
-    def execute_run(map_path: Path, map_filename: str, ai_result: dict):
+    def execute_run(map_path: Path, map_filename: str, ai_result: dict,
+                    query_path: Path | None = None):
         """Run the full pipeline on a saved map and redirect to the report.
-        Shared by the direct path and the post-verification path."""
-        if not stored_query.exists():
+        Shared by the direct path and the post-verification path; the
+        latter passes its phase-1 query snapshot as query_path."""
+        query_path = query_path or stored_query
+        if not query_path.exists():
             map_path.unlink(missing_ok=True)
             return error_page("err_no_query")
         run_id = _new_id()
         out_path = outputs_dir / f"ProductsList_{run_id}.xlsx"
         try:
             report = pipeline.run_pipeline(
-                map_path, stored_query, template_path, out_path,
+                map_path, query_path, template_path, out_path,
                 ai_result=ai_result)
         except Exception as exc:
             # Malformed maps fail in many shapes (BadZipFile, XML
@@ -261,12 +266,21 @@ def create_app(data_dir: Path | str | None = None,
                 log.warning("SKU column detection unavailable: %s", exc)
                 ai_result["note"] = str(exc)
             else:
+                # Defense in depth: _normalize already drops sheets with no
+                # SKU columns, but never pause verification unless there is
+                # at least one actual column to verify.
+                detection = [e for e in detection if e.get("sku_columns")]
                 if detection:
                     # Human verification: park the upload and show the
                     # detected columns (with sample values) before the
                     # heavy processing run uses them.
                     pending_id = _new_id()
                     map_tmp.replace(pending_dir / f"map_{pending_id}.xlsx")
+                    # Snapshot the query too: the confirmed run must use
+                    # the query that was current at upload time, even if
+                    # someone replaces the stored one during the pause.
+                    shutil.copyfile(stored_query,
+                                    pending_dir / f"query_{pending_id}.xlsx")
                     samples = sku_locator.column_samples(previews, detection)
                     (pending_dir / f"pending_{pending_id}.json").write_text(
                         json.dumps({
@@ -309,10 +323,15 @@ def create_app(data_dir: Path | str | None = None,
         log.info("column verification %s: kept %s", pending_id,
                  [(e["sheet"], [c["column"] for c in e["sku_columns"]])
                   for e in confirmed])
-        return execute_run(
-            map_path, meta.get("map_filename", ""),
-            {"enabled": True, "detection": confirmed, "note": None,
-             "confirmed": True})
+        query_snapshot = pending_dir / f"query_{pending_id}.xlsx"
+        try:
+            return execute_run(
+                map_path, meta.get("map_filename", ""),
+                {"enabled": True, "detection": confirmed, "note": None,
+                 "confirmed": True},
+                query_path=query_snapshot if query_snapshot.exists() else None)
+        finally:
+            query_snapshot.unlink(missing_ok=True)
 
     @app.get("/report/<run_id>")
     def report_page(run_id: str):
