@@ -113,13 +113,19 @@ def build_previews(map_path) -> list[dict]:
             for row in ws.iter_rows(min_row=1, max_row=PREVIEW_ROWS,
                                     max_col=PREVIEW_COLS):
                 cells = {}
+                row_num = None
                 for cell in row:
                     value = cell.value
                     if value is None:
                         continue
+                    # Read the row number from a cell that holds a value:
+                    # in read-only mode, empty cells are a shared EmptyCell
+                    # singleton with no .row/.column_letter at all, so
+                    # row[0] must never be used for coordinates.
+                    row_num = cell.row
                     cells[cell.column_letter] = str(value)[:CELL_CHARS]
                 if cells:
-                    rows[str(row[0].row)] = cells
+                    rows[str(row_num)] = cells
             if rows:
                 previews.append({"sheet": ws.title, "rows": rows})
         return previews

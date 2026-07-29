@@ -250,6 +250,21 @@ def test_locator_previews_and_normalization(tmp_path):
     assert previews[0]["rows"]["1"]["A"] == "SKU"
     assert previews[0]["rows"]["2"]["A"] == "M0715OUQO_M900_TU"
 
+    # rows whose first cell is empty must not crash: read-only empty cells
+    # are a singleton with no coordinates (regression: 'EmptyCell' object
+    # has no attribute 'row')
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Gap"
+    ws["B1"] = "SKU"            # column A entirely empty
+    ws["B3"] = "M0715OUQO_M900_TU"   # row 2 entirely empty
+    gap = tmp_path / "gap.xlsx"
+    wb.save(gap)
+    previews = sku_locator.build_previews(gap)
+    assert previews == [{"sheet": "Gap",
+                         "rows": {"1": {"B": "SKU"},
+                                  "3": {"B": "M0715OUQO_M900_TU"}}}]
+
     raw = [
         {"sheet": "Track", "header_row": 1,
          "sku_columns": [{"column": "a", "header": "SKU", "reason": "ok"},
