@@ -10,7 +10,10 @@ import logging
 import os
 import re
 import shutil
+import threading
+import time
 import uuid
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -142,40 +145,88 @@ def create_app(data_dir: Path | str | None = None,
             stale.unlink(missing_ok=True)
 
     def error_page(key: str, status: int = 400, **fmt):
-        return render_template("error.html", message=tr(key, **fmt)), status
+        message = tr(key, **fmt)
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return {"error": message}, status
+        return render_template("error.html", message=message), status
 
-    def execute_run(map_path: Path, map_filename: str, ai_result: dict,
-                    query_path: Path | None = None):
-        """Run the full pipeline on a saved map and redirect to the report.
-        Shared by the direct path and the post-verification path; the
-        latter passes its phase-1 query snapshot as query_path."""
-        query_path = query_path or stored_query
-        if not query_path.exists():
+    def respond_next(url: str):
+        """302 for plain form posts; JSON for the fetch/XHR submission that
+        drives the client-side upload progress bar."""
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return {"next": url}
+        return redirect(url)
+
+    # --- background processing jobs -----------------------------------------
+    # The heavy pipeline runs in a background thread so the browser can poll
+    # a real progress bar instead of hanging on one long request. One
+    # gunicorn worker process serves the app, so this in-process registry is
+    # the whole truth.
+    jobs: dict[str, dict] = {}
+    jobs_lock = threading.Lock()
+
+    def purge_jobs() -> None:
+        cutoff = time.time() - 2 * 3600
+        with jobs_lock:
+            for job_id in [j for j, job in jobs.items()
+                           if job.get("created", 0) < cutoff
+                           and job.get("status") != "running"]:
+                del jobs[job_id]
+
+    def _run_job(job_id: str, map_path: Path, map_filename: str,
+                 ai_result: dict, query_snapshot: Path | None) -> None:
+        job = jobs[job_id]
+        # stage -> (start%, end%) of the overall bar, weighted by how long
+        # each stage takes on real workbooks
+        weights = {"scan": (2, 60), "match": (60, 92), "write": (92, 99)}
+
+        def progress(stage, done, total):
+            lo, hi = weights.get(stage, (0, 2))
+            frac = min(done / total, 1.0) if total else 0.5
+            job["stage"] = stage
+            job["percent"] = round(lo + frac * (hi - lo))
+
+        def cleanup():
             map_path.unlink(missing_ok=True)
-            return error_page("err_no_query")
+            if query_snapshot is not None:
+                query_snapshot.unlink(missing_ok=True)
+
         run_id = _new_id()
         out_path = outputs_dir / f"ProductsList_{run_id}.xlsx"
         try:
             report = pipeline.run_pipeline(
-                map_path, query_path, template_path, out_path,
-                ai_result=ai_result)
+                map_path, query_snapshot or stored_query, template_path,
+                out_path, ai_result=ai_result, progress=progress)
+            # Persist the run report next to the output so the report page
+            # is refresh-safe and re-renderable in either language.
+            (outputs_dir / f"report_{run_id}.json").write_text(
+                json.dumps(report_to_dict(report, map_filename),
+                           ensure_ascii=False))
+            prune_outputs()
         except Exception as exc:
             # Malformed maps fail in many shapes (BadZipFile, XML
-            # ParseError, KeyError, ...) — all must land on the friendly
-            # error page, never the bare 500.
+            # ParseError, KeyError, ...) — all must surface as a friendly
+            # message on the progress page, never a dead bar.
             out_path.unlink(missing_ok=True)
             log.exception("processing failed")
-            return error_page("err_map_failed", detail=str(exc))
-        finally:
-            map_path.unlink(missing_ok=True)
+            cleanup()
+            job.update(status="error", detail=str(exc))
+            return
+        cleanup()  # before flipping status: pollers may react instantly
+        job.update(status="done", percent=100, run_id=run_id)
 
-        # Persist the run report next to the output so the report page is
-        # refresh-safe and can be re-rendered later in either language.
-        (outputs_dir / f"report_{run_id}.json").write_text(
-            json.dumps(report_to_dict(report, map_filename),
-                       ensure_ascii=False))
-        prune_outputs()
-        return redirect(url_for("report_page", run_id=run_id))
+    def start_job(map_path: Path, map_filename: str, ai_result: dict,
+                  query_snapshot: Path | None = None) -> str:
+        purge_jobs()
+        job_id = _new_id()
+        with jobs_lock:
+            jobs[job_id] = {"status": "running", "percent": 0,
+                            "stage": "start", "created": time.time()}
+        threading.Thread(
+            target=_run_job, daemon=True,
+            args=(job_id, map_path, map_filename, ai_result, query_snapshot),
+        ).start()
+        return job_id
 
     # --- language -----------------------------------------------------------
 
@@ -255,6 +306,10 @@ def create_app(data_dir: Path | str | None = None,
             return error_page("err_no_query")
 
         map_tmp = save_upload(map_file, "map")
+        if not zipfile.is_zipfile(map_tmp):
+            map_tmp.unlink(missing_ok=True)
+            return error_page("err_map_failed",
+                              detail="not a valid .xlsx workbook")
         ai_result = {"enabled": False, "detection": None, "note": None,
                      "confirmed": False}
         if sku_locator.is_configured():
@@ -289,16 +344,31 @@ def create_app(data_dir: Path | str | None = None,
                             "samples": samples,
                         }, ensure_ascii=False))
                     prune_pending()
-                    return render_template(
-                        "confirm.html",
-                        pending_id=pending_id,
-                        map_filename=map_file.filename,
-                        detection=detection,
-                        samples=samples,
-                    )
+                    return respond_next(
+                        url_for("confirm_page", pending_id=pending_id))
                 ai_result["detection"] = detection  # []: nothing detected
 
-        return execute_run(map_tmp, map_file.filename, ai_result)
+        job_id = start_job(map_tmp, map_file.filename, ai_result)
+        return respond_next(url_for("progress_page", job_id=job_id))
+
+    @app.get("/confirm/<pending_id>")
+    def confirm_page(pending_id: str):
+        """The human-verification page — a real URL, so it is refresh-safe
+        and reachable after the upload's POST/redirect."""
+        if not RUN_ID_RE.match(pending_id):
+            abort(404)
+        meta_path = pending_dir / f"pending_{pending_id}.json"
+        if not (meta_path.exists()
+                and (pending_dir / f"map_{pending_id}.xlsx").exists()):
+            abort(404)
+        meta = json.loads(meta_path.read_text())
+        return render_template(
+            "confirm.html",
+            pending_id=pending_id,
+            map_filename=meta.get("map_filename", ""),
+            detection=meta.get("detection", []),
+            samples=meta.get("samples", {}),
+        )
 
     @app.post("/process/<pending_id>")
     def process_confirm(pending_id: str):
@@ -324,14 +394,30 @@ def create_app(data_dir: Path | str | None = None,
                  [(e["sheet"], [c["column"] for c in e["sku_columns"]])
                   for e in confirmed])
         query_snapshot = pending_dir / f"query_{pending_id}.xlsx"
-        try:
-            return execute_run(
-                map_path, meta.get("map_filename", ""),
-                {"enabled": True, "detection": confirmed, "note": None,
-                 "confirmed": True},
-                query_path=query_snapshot if query_snapshot.exists() else None)
-        finally:
-            query_snapshot.unlink(missing_ok=True)
+        snapshot = query_snapshot if query_snapshot.exists() else None
+        if snapshot is None and not stored_query.exists():
+            map_path.unlink(missing_ok=True)
+            return error_page("err_no_query")
+        job_id = start_job(
+            map_path, meta.get("map_filename", ""),
+            {"enabled": True, "detection": confirmed, "note": None,
+             "confirmed": True},
+            query_snapshot=snapshot)
+        return respond_next(url_for("progress_page", job_id=job_id))
+
+    @app.get("/progress/<job_id>")
+    def progress_page(job_id: str):
+        if not RUN_ID_RE.match(job_id) or job_id not in jobs:
+            abort(404)
+        return render_template("progress.html", job_id=job_id)
+
+    @app.get("/progress/<job_id>/status")
+    def progress_status(job_id: str):
+        job = jobs.get(job_id)
+        if job is None:
+            return {"status": "lost"}, 404
+        return {key: job.get(key)
+                for key in ("status", "percent", "stage", "run_id", "detail")}
 
     @app.get("/report/<run_id>")
     def report_page(run_id: str):

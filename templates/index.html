@@ -15,10 +15,10 @@
     <div class="warn">{{ t('no_query_warning') | safe }}</div>
   {% endif %}
 
-  <form class="run" action="{{ url_for('process') }}" method="post"
-        enctype="multipart/form-data"
-        onsubmit="document.getElementById('go').disabled = true;
-                  document.getElementById('spinner').style.display = 'block';">
+  <form class="run" id="runform" action="{{ url_for('process') }}"
+        method="post" enctype="multipart/form-data"
+        data-uploading="{{ t('upload_uploading') }}"
+        data-analyzing="{{ t('upload_analyzing') }}">
     <label for="map_file">{{ t('map_label') }}</label>
     <input type="file" id="map_file" name="map_file" accept=".xlsx" required>
 
@@ -26,6 +26,55 @@
     <input type="file" id="query_file" name="query_file" accept=".xlsx">
 
     <button id="go" type="submit">{{ t('process_btn') }}</button>
-    <p id="spinner" class="muted">{{ t('spinner') | safe }}</p>
+    <div id="upwrap" style="display:none">
+      <div class="bar-track"><div class="bar-fill" id="upbar"></div></div>
+      <p class="muted" id="upmsg"></p>
+    </div>
+    <div class="error" id="formerr" style="display:none"></div>
   </form>
+
+  <script>
+    // Submit via XHR so the upload itself gets a real, bytes-based
+    // progress bar; the server answers with {next: url} to follow.
+    const form = document.getElementById('runform');
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      const btn = document.getElementById('go');
+      const wrap = document.getElementById('upwrap');
+      const barEl = document.getElementById('upbar');
+      const msg = document.getElementById('upmsg');
+      const errBox = document.getElementById('formerr');
+      btn.disabled = true;
+      errBox.style.display = 'none';
+      wrap.style.display = 'block';
+      barEl.style.width = '0%';
+      msg.textContent = form.dataset.uploading + ' 0%';
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', form.action);
+      xhr.responseType = 'json';
+      xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+      xhr.upload.onprogress = function (ev) {
+        if (!ev.lengthComputable) return;
+        const pct = Math.round(ev.loaded / ev.total * 100);
+        barEl.style.width = pct + '%';
+        msg.textContent = pct < 100
+          ? form.dataset.uploading + ' ' + pct + '%'
+          : form.dataset.analyzing;
+      };
+      function fail(text) {
+        btn.disabled = false;
+        wrap.style.display = 'none';
+        errBox.textContent = text;
+        errBox.style.display = 'block';
+      }
+      xhr.onload = function () {
+        const r = xhr.response;
+        if (r && r.next) { window.location = r.next; return; }
+        fail(r && r.error ? r.error : 'HTTP ' + xhr.status);
+      };
+      xhr.onerror = function () { fail('network error'); };
+      xhr.send(new FormData(form));
+    });
+  </script>
 {% endblock %}

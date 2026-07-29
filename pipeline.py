@@ -154,7 +154,8 @@ class MapScan:
         ]
 
 
-def scan_sell_thru_map(path, ai_columns: dict | None = None) -> MapScan:
+def scan_sell_thru_map(path, ai_columns: dict | None = None,
+                       progress=None) -> MapScan:
     """Scan every cell of every sheet for SKU-shaped strings and classify
     their fills. Geometry-free on purpose: it handles both the FW26 row
     layout and the LOOK TOTAL block layout without hardcoded columns.
@@ -163,10 +164,14 @@ def scan_sell_thru_map(path, ai_columns: dict | None = None) -> MapScan:
     {sheet name: {"header_row": int | None, "columns": {letter: header}}}.
     In those columns, plausible SKU codes that the strict regex cannot
     recognize are also extracted (below the header row only).
+
+    progress (optional): callback(stage, done, total) invoked periodically.
     """
     ai_columns = ai_columns or {}
     wb = load_workbook(path, read_only=True)
     try:
+        total_rows = sum((ws.max_row or 0) for ws in wb.worksheets) or 1
+        seen_rows = 0
         sheets = []
         for ws in wb.worksheets:
             scan = SheetScan(name=ws.title)
@@ -174,6 +179,9 @@ def scan_sell_thru_map(path, ai_columns: dict | None = None) -> MapScan:
             ai_cols = sheet_ai.get("columns") or {}
             ai_min_row = (sheet_ai.get("header_row") or 0) + 1
             for row in ws.iter_rows():
+                seen_rows += 1
+                if progress and seen_rows % 200 == 0:
+                    progress("scan", seen_rows, total_rows)
                 for cell in row:
                     value = cell.value
                     if not isinstance(value, str):
@@ -204,6 +212,8 @@ def scan_sell_thru_map(path, ai_columns: dict | None = None) -> MapScan:
                                 scan.ai_highlighted_cell_details.append(
                                     (cell.coordinate, sku, extract_base(sku)))
             sheets.append(scan)
+        if progress:
+            progress("scan", total_rows, total_rows)
         return MapScan(sheets=sheets)
     finally:
         wb.close()
@@ -252,7 +262,7 @@ def count_query_rows(path) -> int:
         wb.close()
 
 
-def match_query(path, bases) -> dict[str, list[tuple]]:
+def match_query(path, bases, progress=None) -> dict[str, list[tuple]]:
     """Single pass over the query export. A query Sku is 'BASE - COLOR - SIZE'
     with literal ' - ' separators; match on exact first-segment equality
     (never prefix-match raw strings — first segments can contain X too).
@@ -264,7 +274,11 @@ def match_query(path, bases) -> dict[str, list[tuple]]:
     wb = load_workbook(path, read_only=True)
     try:
         ws = wb[QUERY_SHEET] if QUERY_SHEET in wb.sheetnames else wb.worksheets[0]
-        for row in ws.iter_rows(min_row=2, values_only=True):
+        total = ws.max_row or 1
+        for row_num, row in enumerate(
+                ws.iter_rows(min_row=2, values_only=True), start=2):
+            if progress and row_num % 2000 == 0:
+                progress("match", row_num, total)
             sku = row[1] if len(row) > 1 else None
             if not isinstance(sku, str):
                 continue
@@ -298,7 +312,7 @@ def _barcode_text(value) -> str:
 
 
 def build_output(template_path, out_path, matched, unmatched_bases,
-                 base_sheets=None) -> int:
+                 base_sheets=None, progress=None) -> int:
     """Copy the template and append one row per matched query row, sorted by
     base, then color, then size. Returns the number of data rows written.
 
@@ -318,9 +332,12 @@ def build_output(template_path, out_path, matched, unmatched_bases,
     rows = [row for base in sorted(matched) for row in matched[base]]
     rows.sort(key=_sku_sort_key)
 
+    total = len(rows) or 1
     n = 1
     for query_row in rows:
         n += 1
+        if progress and (n - 2) % 100 == 0:
+            progress("write", n - 2, total)
         (barcode, sku, division, department, season,
          _ref, _color, _size, quantity, unit_cost, unit_retail,
          _item_type, _path) = query_row[:13]
@@ -392,7 +409,8 @@ def _trace_rows(rows) -> list[dict]:
 
 
 def run_pipeline(map_path, query_path, template_path, out_path,
-                 locator=None, ai_result: dict | None = None) -> RunReport:
+                 locator=None, ai_result: dict | None = None,
+                 progress=None) -> RunReport:
     """locator (optional): callable(map_path) -> detection list, as returned
     by sku_locator.locate. Any locator failure is reported, never fatal.
 
@@ -418,12 +436,14 @@ def run_pipeline(map_path, query_path, template_path, out_path,
                 log.warning("SKU column detection unavailable: %s", exc)
                 ai_note = str(exc)
     scan = scan_sell_thru_map(map_path,
-                              ai_columns=build_ai_columns(ai_detection))
+                              ai_columns=build_ai_columns(ai_detection),
+                              progress=progress)
     bases = scan.bases
-    matched = match_query(query_path, bases)
+    matched = match_query(query_path, bases, progress=progress)
     unmatched = sorted(set(bases) - set(matched))
     rows_written = build_output(
-        template_path, out_path, matched, unmatched, base_sheets=bases
+        template_path, out_path, matched, unmatched, base_sheets=bases,
+        progress=progress
     )
     base_skus: dict[str, set] = {}
     for sheet in scan.sheets:

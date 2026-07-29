@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}{{ t('page_progress') }}{% endblock %}
+{% block content %}
+  <h2>{{ t('progress_heading') }}</h2>
+  <div class="bar-track"><div class="bar-fill" id="bar"></div></div>
+  <p class="muted" id="stage">{{ t('stage_start') }}</p>
+  <div class="error" id="err" style="display:none"></div>
+  <p id="back" style="display:none">
+    <a href="{{ url_for('index') }}">{{ t('back_to_upload') | safe }}</a></p>
+  <noscript><div class="warn">JavaScript is required to follow progress.
+    / 需要启用 JavaScript 才能显示进度。</div></noscript>
+  <script>
+    const labels = {{ {'start': t('stage_start'), 'scan': t('stage_scan'),
+                       'match': t('stage_match'),
+                       'write': t('stage_write')} | tojson }};
+    const errTemplate = {{ t('err_map_failed', detail='__DETAIL__') | tojson }};
+    const lostMsg = {{ t('progress_lost') | tojson }};
+    const statusUrl = {{ url_for('progress_status', job_id=job_id) | tojson }};
+    const reportUrl = {{ url_for('report_page', run_id='RUNID') | tojson }};
+    const bar = document.getElementById('bar');
+    const stage = document.getElementById('stage');
+
+    function fail(message) {
+      const err = document.getElementById('err');
+      err.textContent = message;
+      err.style.display = 'block';
+      document.getElementById('back').style.display = 'block';
+      stage.style.display = 'none';
+    }
+
+    async function tick() {
+      try {
+        const r = await fetch(statusUrl);
+        if (r.status === 404) { fail(lostMsg); return; }
+        const d = await r.json();
+        if (d.status === 'done') {
+          bar.style.width = '100%';
+          window.location = reportUrl.replace('RUNID', d.run_id);
+          return;
+        }
+        if (d.status === 'error') {
+          fail(errTemplate.replace('__DETAIL__', d.detail || ''));
+          return;
+        }
+        bar.style.width = (d.percent || 0) + '%';
+        stage.textContent = (labels[d.stage] || labels.start)
+          + ' — ' + (d.percent || 0) + '%';
+      } catch (e) { /* transient network blip — keep polling */ }
+      setTimeout(tick, 700);
+    }
+    tick();
+  </script>
+{% endblock %}

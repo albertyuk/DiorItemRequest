@@ -83,6 +83,17 @@ STRINGS = {
         "th_use": "Use", "th_samples": "Sample values",
         "confirm_btn": "Looks right — process",
         "confirm_cancel": "Cancel and start over",
+        "page_progress": "processing",
+        "progress_heading": "Processing — this page updates itself",
+        "stage_start": "Starting…",
+        "stage_scan": "Scanning the map for highlighted SKUs",
+        "stage_match": "Matching bases against the stock query",
+        "stage_write": "Writing the ProductsList workbook",
+        "progress_lost": ("The run was interrupted (probably a server "
+                          "restart). Nothing was saved — go back and upload "
+                          "again."),
+        "upload_uploading": "Uploading…",
+        "upload_analyzing": "Upload complete — reading the sheet headers…",
         "ai_failed": ("AI column detection was unavailable this run: "
                       "{detail}. The standard scan still ran in full."),
         "ai_off": ("AI column detection is off — set the ANTHROPIC_API_KEY "
@@ -211,6 +222,16 @@ STRINGS = {
         "th_use": "使用", "th_samples": "示例值",
         "confirm_btn": "确认无误，开始处理",
         "confirm_cancel": "取消并返回",
+        "page_progress": "正在处理",
+        "progress_heading": "正在处理 — 本页会自动更新进度",
+        "stage_start": "正在启动…",
+        "stage_scan": "正在扫描表格中的标黄 SKU",
+        "stage_match": "正在库存查询表中匹配基础款号",
+        "stage_write": "正在生成 ProductsList 工作簿",
+        "progress_lost": ("处理被中断（可能是服务器重启）。本次没有保存任何结果，"
+                          "请返回重新上传。"),
+        "upload_uploading": "正在上传…",
+        "upload_analyzing": "上传完成 — 正在读取表头…",
         "ai_failed": "本次运行 AI 识别不可用：{detail}。标准扫描已正常完成。",
         "ai_off": ("AI 识别功能未开启 — 配置 ANTHROPIC_API_KEY 密钥即可启用。"
                    "标准扫描已正常完成。"),

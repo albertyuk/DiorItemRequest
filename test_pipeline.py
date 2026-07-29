@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import io
 import re
+import time
 from pathlib import Path
 
 import pytest
@@ -29,6 +30,28 @@ needs_samples = pytest.mark.skipif(
     not (MAP.exists() and QUERY.exists() and TEMPLATE.exists()),
     reason="real sample workbooks not present in ./samples/",
 )
+
+
+def _wait_status(client, job_id, timeout=180):
+    """Poll the progress endpoint until the background job finishes."""
+    statuses = []
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        data = client.get(f"/progress/{job_id}/status").get_json()
+        statuses.append(data)
+        if data["status"] in ("done", "error"):
+            return data, statuses
+        time.sleep(0.2)
+    raise AssertionError(f"job {job_id} did not finish: {statuses[-3:]}")
+
+
+def _finish_job(client, resp, timeout=180):
+    """Follow a 302 to /progress/<job_id> and wait out the job."""
+    assert resp.status_code == 302, (resp.status_code, resp.data[:300])
+    location = resp.headers["Location"]
+    match = re.search(r"/progress/([0-9a-f_]+)$", location)
+    assert match, location
+    return _wait_status(client, match.group(1), timeout)
 
 
 @pytest.fixture(scope="session")
@@ -309,28 +332,29 @@ def test_human_verification_flow(tmp_path, monkeypatch):
     client, map_path, query_path = _verification_app(
         tmp_path, monkeypatch, detection)
 
-    # phase 1: upload pauses on the verification page instead of processing
+    # phase 1: upload redirects to the verification page (a real URL)
     with map_path.open("rb") as m, query_path.open("rb") as q:
         resp = client.post(
             "/process",
             data={"map_file": (m, "track.xlsx"), "query_file": (q, "q.xlsx")},
             content_type="multipart/form-data",
         )
-    assert resp.status_code == 200
-    html = resp.data.decode()
+    assert resp.status_code == 302 and "/confirm/" in resp.headers["Location"]
+    page = client.get(resp.headers["Location"])
+    assert page.status_code == 200
+    html = page.data.decode()
     assert "Verify the AI-detected SKU columns" in html
     assert "M0715OUQO_M900_TU" in html          # sample values shown
-    assert 'name="col" value="0:0" checked' in html.replace("\n", " ").replace("  ", " ") \
-        or re.search(r'name="col"\s+value="0:0"\s+checked', html)
+    assert re.search(r'name="col"\s+value="0:0"\s+checked', html)
     action = re.search(r'action="/process/(\d{8}_\d{6}_[0-9a-f]{6})"', html)
     assert action, "confirmation form must post to /process/<pending_id>"
     pending_id = action.group(1)
 
-    # phase 2: confirm the column -> full run -> report marks it confirmed
-    resp = client.post(f"/process/{pending_id}", data={"col": "0:0"},
-                       follow_redirects=True)
-    assert resp.status_code == 200
-    html = resp.data.decode()
+    # phase 2: confirm the column -> background run -> confirmed report
+    resp = client.post(f"/process/{pending_id}", data={"col": "0:0"})
+    data, _ = _finish_job(client, resp)
+    assert data["status"] == "done", data
+    html = client.get(f"/report/{data['run_id']}").data.decode()
     assert "You reviewed and confirmed these columns" in html
     assert "641V19A1491" in html                # matched via the AI column
     assert "M0715OUQO_M900_TU" in html          # unmatched, still traced
@@ -353,14 +377,15 @@ def test_verification_deselect_all_falls_back_to_standard_scan(
             data={"map_file": (m, "track.xlsx"), "query_file": (q, "q.xlsx")},
             content_type="multipart/form-data",
         )
+    confirm = client.get(resp.headers["Location"])
     pending_id = re.search(r'action="/process/([0-9_a-f]+)"',
-                           resp.data.decode()).group(1)
+                           confirm.data.decode()).group(1)
 
     # submit with every checkbox unticked
-    resp = client.post(f"/process/{pending_id}", data={},
-                       follow_redirects=True)
-    assert resp.status_code == 200
-    html = resp.data.decode()
+    resp = client.post(f"/process/{pending_id}", data={})
+    data, _ = _finish_job(client, resp)
+    assert data["status"] == "done", data
+    html = client.get(f"/report/{data['run_id']}").data.decode()
     assert "You unticked every detected column" in html
     # none of the non-standard SKUs were extracted
     assert "M0715OUQO_M900_TU" not in html
@@ -381,12 +406,13 @@ def test_verification_skipped_when_nothing_detected(tmp_path, monkeypatch,
             "/process",
             data={"map_file": (m, "track.xlsx"), "query_file": (q, "q.xlsx")},
             content_type="multipart/form-data",
-            follow_redirects=True,
         )
-    # no confirmation page: straight to the report, with the honest message
-    assert resp.status_code == 200
-    html = resp.data.decode()
-    assert "Verify the AI-detected" not in html
+    # no confirmation page: straight to a processing job and the report
+    assert resp.status_code == 302
+    assert "/confirm/" not in resp.headers["Location"]
+    data, _ = _finish_job(client, resp)
+    assert data["status"] == "done", data
+    html = client.get(f"/report/{data['run_id']}").data.decode()
     assert "found no SKU columns" in html
     assert "unticked every detected column" not in html
 
@@ -420,8 +446,9 @@ def test_confirmed_run_uses_query_snapshot_from_upload_time(
             "/process",
             data={"map_file": (m, "a.xlsx"), "query_file": (q, "qa.xlsx")},
             content_type="multipart/form-data")
+    confirm = client.get(resp.headers["Location"])
     pending_id = re.search(r'action="/process/([0-9_a-f]+)"',
-                           resp.data.decode()).group(1)
+                           confirm.data.decode()).group(1)
 
     # meanwhile the stored query is replaced with query B
     with map_path.open("rb") as m, query_b.open("rb") as q:
@@ -431,10 +458,10 @@ def test_confirmed_run_uses_query_snapshot_from_upload_time(
                     content_type="multipart/form-data")
 
     # A's confirmed run must still be built from query A's numbers
-    resp = client.post(f"/process/{pending_id}", data={"col": "0:0"},
-                       follow_redirects=True)
-    html = resp.data.decode()
-    assert resp.status_code == 200
+    resp = client.post(f"/process/{pending_id}", data={"col": "0:0"})
+    data, _ = _finish_job(client, resp)
+    assert data["status"] == "done", data
+    html = client.get(f"/report/{data['run_id']}").data.decode()
     assert "123.45" in html
     assert "987.65" not in html
 
@@ -538,8 +565,13 @@ def test_end_to_end_upload_and_download(tmp_path):
             "/process",
             data={"map_file": (m, "map.xlsx"), "query_file": (q, "query.xlsx")},
             content_type="multipart/form-data",
-            follow_redirects=True,  # POST redirects to GET /report/<run_id>
         )
+    # the upload hands off to a background job with a polled progress bar
+    data, statuses = _finish_job(client, resp)
+    assert data["status"] == "done", data
+    # on a real-sized workbook the bar reports true intermediate progress
+    assert any(0 < (s.get("percent") or 0) < 100 for s in statuses)
+    resp = client.get(f"/report/{data['run_id']}")
     assert resp.status_code == 200
     html = resp.data.decode()
     match = re.search(r"/download/(\d{8}_\d{6}_[0-9a-f]{6})", html)
@@ -577,12 +609,10 @@ def test_end_to_end_upload_and_download(tmp_path):
     assert b"Stored stock query" in page.data
     with MAP.open("rb") as m:
         resp = client.post("/process", data={"map_file": (m, "map.xlsx")},
-                           content_type="multipart/form-data",
-                           follow_redirects=True)
-    assert resp.status_code == 200
-    second = re.search(r"/download/(\d{8}_\d{6}_[0-9a-f]{6})",
-                       resp.data.decode())
-    assert second and second.group(1) != match.group(1)
+                           content_type="multipart/form-data")
+    second, _ = _finish_job(client, resp)
+    assert second["status"] == "done"
+    assert second["run_id"] != data["run_id"]
 
     # the report is persistent (refresh-safe) and language-switchable:
     # the same run re-renders in Chinese with the same download link
@@ -751,8 +781,45 @@ def test_corrupt_xml_map_gets_friendly_error(tmp_path):
             data={"map_file": (corrupt, "map.xlsx"), "query_file": (q, "q.xlsx")},
             content_type="multipart/form-data",
         )
+    # it passes the quick zip check, so the failure surfaces on the
+    # progress page as a job error with the parse detail — never a dead bar
+    data, _ = _finish_job(client, resp)
+    assert data["status"] == "error"
+    assert data["detail"]
+
+
+def test_xhr_submission_gets_json_contract(tmp_path):
+    """The upload-progress path posts with XHR and expects JSON back:
+    {'next': url} on success, {'error': message} on failure."""
+    app = create_app(data_dir=tmp_path, password="")
+    client = app.test_client()
+    xhr = {"X-Requested-With": "XMLHttpRequest"}
+
+    # error path: no map file selected
+    resp = client.post("/process", data={}, headers=xhr,
+                       content_type="multipart/form-data")
     assert resp.status_code == 400
-    assert b"could not be processed" in resp.data
+    assert "error" in resp.get_json()
+
+    # success path: tiny valid map + query -> {'next': /progress/<job>}
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "query"
+    ws.append(pipeline.QUERY_HEADERS)
+    q = tmp_path / "q.xlsx"
+    wb.save(q)
+    m = tmp_path / "m.xlsx"
+    _track_workbook(m)
+    with m.open("rb") as mf, q.open("rb") as qf:
+        resp = client.post(
+            "/process",
+            data={"map_file": (mf, "m.xlsx"), "query_file": (qf, "q.xlsx")},
+            headers=xhr, content_type="multipart/form-data")
+    assert resp.status_code == 200
+    nxt = resp.get_json()["next"]
+    assert "/progress/" in nxt
+    data, _ = _wait_status(client, nxt.rsplit("/", 1)[-1])
+    assert data["status"] == "done"
 
 
 def test_indexed_color_fills_are_flagged_not_dropped(tmp_path):
