@@ -52,7 +52,7 @@ STRINGS = {
                               "<strong>{rows}</strong> rows for "
                               "<strong>{matched}</strong> of "
                               "<strong>{total}</strong> highlighted base SKUs."),
-        "download_label": "Download {name}",
+        "download_btn": "Download",
         "steps_heading": "Processing steps",
         "step1_title": "Step 1 — scan every sheet for highlighted SKUs",
         "step1_desc": ("Every cell is checked for a SKU-shaped value; a cell "
@@ -90,13 +90,13 @@ STRINGS = {
         "review_intro": ("Everything extracted from <strong>{map}</strong> "
                          "is listed below. Ticked SKUs go into the "
                          "ProductsList; untick the ones that should stay "
-                         "out, then press the green build button — it shows "
+                         "out, then press the build button — it shows "
                          "exactly how many rows will be written, and no file "
                          "is created until you press it."),
         "review_ai_intro": ("Claude located these SKU columns by reading the "
                             "sheet headers. Check the sample values: do they "
                             "look like real SKU codes? SKUs from these "
-                            "columns carry a purple “AI” badge in "
+                            "columns carry an “AI” badge in "
                             "the list below — untick any that look wrong."),
         "review_sku_heading": "Extracted SKUs",
         "th_colorways": "Highlighted colorway(s)",
@@ -246,7 +246,7 @@ STRINGS = {
         "err_session_expired": "Your session expired — log in again.",
         "err_auth_unconfigured": "Authentication is not configured.",
         "nav_team": "Team",
-        "nav_logout": "Log out ({name})",
+        "nav_logout": "Log out",
 
         # auth: team page
         "team_heading": "Team",
@@ -364,7 +364,7 @@ STRINGS = {
                               "<strong>{total}</strong> 个标黄基础款号，其中 "
                               "<strong>{matched}</strong> 个在库存查询表中匹配到记录，"
                               "已写入 <strong>{rows}</strong> 行。"),
-        "download_label": "下载 {name}",
+        "download_btn": "下载",
         "steps_heading": "处理步骤",
         "step1_title": "第 1 步：扫描各工作表，找出标黄 SKU",
         "step1_desc": ("工具会逐格检查所有工作表：内容是 SKU、"
@@ -395,11 +395,11 @@ STRINGS = {
         "review_heading": "生成前确认",
         "review_intro": ("以下是从 <strong>{map}</strong> 中提取到的全部内容。"
                          "保持勾选的款号会写入 ProductsList；不需要的请取消勾选，"
-                         "然后点击绿色生成按钮 — 按钮上会显示将写入的行数，"
+                         "然后点击生成按钮 — 按钮上会显示将写入的行数，"
                          "点击之前不会生成任何文件。"),
         "review_ai_intro": ("以下 SKU 列由 Claude 阅读表头后识别。"
                             "请核对示例值是否确实是 SKU 编码；"
-                            "来自这些列的款号在下方清单中带紫色“AI”标记，"
+                            "来自这些列的款号在下方清单中带“AI”标记，"
                             "发现识别有误就取消勾选。"),
         "review_sku_heading": "提取到的 SKU",
         "th_colorways": "标黄颜色款",
@@ -525,7 +525,7 @@ STRINGS = {
         "err_session_expired": "登录已过期，请重新登录。",
         "err_auth_unconfigured": "服务器尚未配置身份验证。",
         "nav_team": "团队",
-        "nav_logout": "退出（{name}）",
+        "nav_logout": "退出",
 
         # auth: team page
         "team_heading": "团队",

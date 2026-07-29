@@ -5,94 +5,175 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ t('site_title') }} — {% block title %}{% endblock %}</title>
   <style>
+    :root {
+      --ink: #1a1a1a;
+      --muted: #757575;
+      --hair: #e4e4e4;
+      --hair-dark: #cfcfcf;   /* decorative rules only */
+      --control: #8f8f8f;     /* interactive-component borders (>=3:1) */
+      --serif: "Didot", "Bodoni MT", Georgia, "Playfair Display",
+               "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC",
+               "Noto Serif SC", "SimSun", serif;
+      --sans: "Helvetica Neue", Helvetica, Arial, "PingFang SC",
+              "Microsoft YaHei", sans-serif;
+    }
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI",
-           "PingFang SC", "Microsoft YaHei", sans-serif;
-           background: #f2f4f7; color: #1b1f24; line-height: 1.55; }
-    a { color: #155e2b; }
-    header.top { background: #fff; border-bottom: 1px solid #e3e6ea; }
+    body { margin: 0; font-family: var(--sans); background: #fff;
+           color: var(--ink); line-height: 1.65; font-size: 15px;
+           -webkit-font-smoothing: antialiased; }
+    a { color: var(--ink); text-decoration: underline;
+        text-decoration-thickness: 1px; text-underline-offset: 3px; }
+    a:hover { opacity: .6; }
+    /* dynamic values (filenames, usernames) inside uppercased chrome */
+    .data { text-transform: none; letter-spacing: .04em; }
+
+    header.top { background: #fff; border-bottom: 1px solid var(--ink); }
     header.top .wrap { display: flex; justify-content: space-between;
-                       align-items: center; padding-top: .7rem;
-                       padding-bottom: .7rem; gap: 1rem; }
-    .wrap { max-width: 54rem; margin: 0 auto; padding-left: 1rem;
-            padding-right: 1rem; }
-    .brand { font-weight: 700; text-decoration: none; color: #1b1f24;
-             font-size: 1.02rem; }
+                       align-items: baseline; padding-top: 1.15rem;
+                       padding-bottom: 1.05rem; gap: 1rem; }
+    .wrap { max-width: 56rem; margin: 0 auto; padding-left: 1.2rem;
+            padding-right: 1.2rem; }
+    .brand { font-family: var(--serif); font-weight: 400;
+             text-transform: uppercase; letter-spacing: .24em;
+             font-size: 1.05rem; text-decoration: none; color: var(--ink);
+             white-space: nowrap; }
+    .brand:hover { opacity: 1; }
     header.top nav { white-space: nowrap; }
-    header.top nav a { margin-left: .9rem; text-decoration: none;
-                       color: #4a5560; font-size: .95rem; }
-    header.top nav a.lang { border: 1px solid #d4d9de; border-radius: 6px;
-                            padding: .25rem .7rem; background: #f7f8fa; }
-    main.wrap { padding-top: 1.4rem; padding-bottom: 3rem; }
-    .steps { list-style: none; display: flex; gap: .5rem; padding: 0;
-             margin: 0 0 1.4rem; counter-reset: s; }
+    header.top nav a { margin-left: 1.3rem; text-decoration: none;
+                       color: var(--ink); font-size: .68rem;
+                       letter-spacing: .18em; text-transform: uppercase; }
+    header.top nav a:hover { opacity: 1; text-decoration: underline;
+                             text-underline-offset: 4px; }
+    header.top nav a.lang { border: 1px solid var(--ink);
+                            padding: .3rem .75rem; background: #fff; }
+    header.top nav a.lang:hover { background: var(--ink); color: #fff;
+                                  text-decoration: none; }
+    main.wrap { padding-top: 2.2rem; padding-bottom: 4rem; }
+
+    .steps { list-style: none; display: flex; gap: 0; padding: 0;
+             margin: 0 0 2.2rem; counter-reset: s;
+             border-bottom: 1px solid var(--hair); }
     .steps li { counter-increment: s; flex: 1; text-align: center;
-                font-size: .88rem; color: #8a939c; padding: .45rem .3rem;
-                border-bottom: 3px solid #dfe3e8; }
-    .steps li::before { content: counter(s); display: inline-block;
-                        width: 1.35rem; height: 1.35rem; line-height: 1.35rem;
-                        border-radius: 50%; background: #c6ccd2; color: #fff;
-                        margin-right: .45rem; font-size: .8rem; }
-    .steps li.on { color: #155e2b; border-color: #9fce9f; }
-    .steps li.on::before { background: #2c7a44; }
-    .steps li.now { font-weight: 700; color: #124d24;
-                    border-color: #2c7a44; }
-    .card { background: #fff; border: 1px solid #e3e6ea; border-radius: 10px;
-            padding: 1.1rem 1.2rem; margin: 0 0 1.1rem;
-            box-shadow: 0 1px 2px rgba(16,24,40,.04); }
-    h2 { font-size: 1.15rem; margin: .1rem 0 .6rem; }
-    h3 { font-size: 1rem; margin: 1.2rem 0 .4rem; }
+                font-size: .66rem; letter-spacing: .18em;
+                text-transform: uppercase; color: var(--muted);
+                padding: .65rem .3rem .85rem; margin-bottom: -1px;
+                border-bottom: 2px solid transparent; }
+    .steps li::before { content: counter(s, decimal-leading-zero);
+                        font-family: var(--serif); font-size: .9rem;
+                        letter-spacing: .08em; margin-right: .55rem; }
+    .steps li.on { color: var(--ink); }
+    .steps li.now { border-color: var(--ink); color: var(--ink); }
+
+    .card { background: #fff; border: 1px solid var(--hair);
+            padding: 1.6rem 1.8rem; margin: 0 0 1.4rem; }
+    h2 { font-family: var(--serif); font-weight: 500; font-size: 1.35rem;
+         letter-spacing: .03em; margin: 1.9rem 0 .8rem; }
+    h3 { font-family: var(--serif); font-weight: 500; font-size: 1.08rem;
+         letter-spacing: .03em; margin: 1.6rem 0 .5rem; }
+    main > h2:first-child, .card > h2:first-child,
     .card > h3:first-child { margin-top: .1rem; }
-    table { border-collapse: collapse; width: 100%; margin: .6rem 0;
-            font-size: .92rem; }
-    th { text-align: left; background: #f7f8fa; color: #4a5560;
-         font-weight: 600; font-size: .85rem; }
-    th, td { border-bottom: 1px solid #edf0f3; padding: .45rem .6rem;
-             vertical-align: top; }
-    .muted { color: #69737d; font-size: .9rem; }
-    .ok { background: #e9f6ec; border: 1px solid #b5dcbf;
-          padding: .7rem .9rem; border-radius: 8px; margin: 0 0 1rem; }
-    .warn { background: #fff6e0; border: 1px solid #eed48a;
-            padding: .7rem .9rem; border-radius: 8px; margin: 0 0 1rem; }
-    .error { background: #fdecea; border: 1px solid #e5a09a;
-             padding: .7rem .9rem; border-radius: 8px; margin: 0 0 1rem; }
-    .badge { display: inline-block; font-size: .74rem; padding: .05rem .5rem;
-             border-radius: 99px; border: 1px solid; vertical-align: middle; }
-    .badge-warn { color: #8a5b00; background: #fff6e0; border-color: #eed48a; }
-    .badge-ai { color: #4c3ba0; background: #efedff; border-color: #c9c2f2; }
-    .badge-ok { color: #155e2b; background: #e9f6ec; border-color: #b5dcbf; }
-    button, a.button { background: #2c7a44; color: #fff; border: 0;
-             border-radius: 8px; font-size: 1rem; padding: .55rem 1.4rem;
-             cursor: pointer; text-decoration: none; display: inline-block; }
-    button:hover, a.button:hover { background: #256a3a; }
-    button:disabled { opacity: .55; cursor: wait; }
-    button.btn-quiet, a.btn-quiet { background: #f0f2f4; color: #333c44;
-             border: 1px solid #d4d9de; font-size: .88rem;
-             padding: .35rem .8rem; border-radius: 7px; cursor: pointer;
+
+    table { border-collapse: collapse; width: 100%; margin: .8rem 0;
+            font-size: .88rem; }
+    th { text-align: left; font-weight: 500; font-size: .64rem;
+         letter-spacing: .14em; text-transform: uppercase;
+         color: var(--muted); border-bottom: 1px solid var(--ink);
+         padding: .5rem .65rem; vertical-align: bottom;
+         white-space: nowrap; }
+    td { border-bottom: 1px solid var(--hair); padding: .55rem .65rem;
+         vertical-align: top; }
+    .muted { color: var(--muted); font-size: .88rem; }
+
+    .ok    { background: #edf2ea; border: 1px solid #ccd8c8;
+             border-left: 3px solid #5c6e5a; padding: .85rem 1.1rem;
+             margin: 0 0 1.2rem; font-size: .92rem; }
+    .warn  { background: #f6efd7; border: 1px solid #dccf9e;
+             border-left: 3px solid #a5893c; padding: .85rem 1.1rem;
+             margin: 0 0 1.2rem; font-size: .92rem; }
+    .error { background: #f7e9e6; border: 1px solid #ddb9b1;
+             border-left: 3px solid #a04a3e; padding: .85rem 1.1rem;
+             margin: 0 0 1.2rem; font-size: .92rem; }
+
+    .badge { display: inline-block; font-size: .66rem; font-weight: 500;
+             letter-spacing: .12em; text-transform: uppercase;
+             padding: .1rem .5rem; border: 1px solid;
+             vertical-align: middle; }
+    .badge-warn { color: #6d5a1e; background: #f6efd7; border-color: #c2b170; }
+    .badge-ai   { color: var(--ink); background: #fff; border-color: var(--ink); }
+    .badge-ok   { color: #45543f; background: #edf2ea; border-color: #93a58c; }
+
+    button, a.button { background: var(--ink); color: #fff;
+             border: 1px solid var(--ink); border-radius: 0;
+             font-family: var(--sans); font-size: .7rem;
+             letter-spacing: .18em; text-transform: uppercase;
+             padding: .75rem 1.7rem; cursor: pointer;
              text-decoration: none; display: inline-block; }
-    button.btn-quiet:hover, a.btn-quiet:hover { background: #e6e9ec; }
-    .toolbar { display: flex; gap: .55rem; align-items: center;
-               flex-wrap: wrap; margin: .4rem 0 .6rem; }
+    button:hover, a.button:hover { background: #fff; color: var(--ink);
+                                   opacity: 1; }
+    button:disabled { background: var(--muted); border-color: var(--muted);
+                      color: #fff; opacity: 1; cursor: wait; }
+    button.btn-quiet, a.btn-quiet { background: #fff; color: var(--ink);
+             border: 1px solid var(--control); font-size: .62rem;
+             letter-spacing: .14em; text-transform: uppercase;
+             padding: .42rem .95rem; cursor: pointer;
+             text-decoration: none; display: inline-block; }
+    button.btn-quiet:hover, a.btn-quiet:hover { border-color: var(--ink);
+                                                opacity: 1; }
+    .toolbar { display: flex; gap: .6rem; align-items: center;
+               flex-wrap: wrap; margin: .6rem 0 .8rem; }
     .toolbar .spacer { flex: 1; }
-    form.run label { display: block; margin: 1rem 0 .25rem;
-                     font-weight: 600; }
+
+    form.run label { display: block; margin: 1.15rem 0 .3rem;
+                     font-size: .66rem; font-weight: 500;
+                     letter-spacing: .16em; text-transform: uppercase;
+                     color: var(--ink); }
     form.run input:not([type="file"]):not([type="checkbox"]) {
-      width: 100%; max-width: 22rem; padding: .45rem .6rem;
-      border: 1px solid #d4d9de; border-radius: 7px; font-size: .95rem;
-      background: #fff; }
-    #spinner { display: none; margin-top: .8rem; }
-    .bar-track { width: 100%; height: 14px; background: #e8ebee;
-                 border: 1px solid #d4d9de; border-radius: 7px;
-                 overflow: hidden; margin: .8rem 0 .4rem; }
-    .bar-fill { height: 100%; width: 0%; background: #2c7a44;
+      width: 100%; max-width: 24rem; padding: .55rem .7rem;
+      border: 1px solid var(--control); border-radius: 0;
+      font-size: .92rem; font-family: var(--sans); background: #fff;
+      color: var(--ink); }
+    form.run input:focus { outline: none; border-color: var(--ink); }
+    form.run input[type="file"] { font-size: .85rem; }
+    form.run input[type="file"]::file-selector-button {
+      background: #fff; color: var(--ink);
+      border: 1px solid var(--control); border-radius: 0;
+      font-family: var(--sans); font-size: .62rem; letter-spacing: .14em;
+      text-transform: uppercase; padding: .42rem .95rem;
+      margin-right: .8rem; cursor: pointer; }
+    form.run input[type="file"]::file-selector-button:hover {
+      border-color: var(--ink); }
+    input[type="checkbox"] { accent-color: var(--ink); }
+
+    .bar-track { width: 100%; height: 8px; background: #efefef;
+                 border: 1px solid var(--hair); overflow: hidden;
+                 margin: 1rem 0 .5rem; }
+    .bar-fill { height: 100%; width: 0%; background: var(--ink);
                 transition: width .3s ease; }
-    details { margin: .5rem 0 1rem; border: 1px solid #e3e6ea;
-              border-radius: 8px; padding: .35rem .6rem; background: #fff; }
-    details summary { cursor: pointer; font-size: .92rem; }
+
+    details { margin: .6rem 0 1.2rem; border: 1px solid var(--hair);
+              padding: .5rem .8rem; background: #fff; }
+    details summary { cursor: pointer; font-size: .88rem; }
     details table { margin-top: .5rem; }
-    code { background: #f0f2f4; padding: .1rem .3rem; border-radius: 3px; }
-    ul.compact { margin: .3rem 0; padding-left: 1.3rem; }
-    ol.tut li { margin: .45rem 0; }
+    code { background: #f4f4f2; padding: .1rem .35rem; border-radius: 0;
+           font-size: .85em; }
+    ul.compact { margin: .4rem 0; padding-left: 1.3rem; }
+    ol.tut li { margin: .5rem 0; }
+
+    /* CJK has no uppercase: the Latin micro-label sizes and tracking read
+       as undersized, muddy Chinese — bump size, ease tracking. */
+    html[lang="zh-CN"] header.top nav a { font-size: .76rem;
+                                          letter-spacing: .1em; }
+    html[lang="zh-CN"] .steps li { font-size: .74rem; letter-spacing: .1em; }
+    html[lang="zh-CN"] th { font-size: .74rem; letter-spacing: .08em; }
+    html[lang="zh-CN"] .badge { font-size: .72rem; letter-spacing: .08em; }
+    html[lang="zh-CN"] button, html[lang="zh-CN"] a.button {
+      font-size: .8rem; letter-spacing: .12em; }
+    html[lang="zh-CN"] button.btn-quiet, html[lang="zh-CN"] a.btn-quiet {
+      font-size: .72rem; letter-spacing: .1em; }
+    html[lang="zh-CN"] form.run label { font-size: .78rem;
+                                        letter-spacing: .1em; }
+    html[lang="zh-CN"] form.run input[type="file"]::file-selector-button {
+      font-size: .72rem; letter-spacing: .1em; }
   </style>
 </head>
 <body>
@@ -101,13 +182,15 @@
                         else url_for('index')) ~ '?lang=' ~ other_lang %}
   <header class="top">
     <div class="wrap">
-      <a class="brand" href="{{ url_for('index') }}">{{ t('site_title') }}</a>
+      <a class="brand" href="{{ url_for('index') }}">{{
+        t('site_title').split('—')[0].strip() }}</a>
       <nav>
         <a href="{{ url_for('index') }}">{{ t('nav_home') }}</a>
         <a href="{{ url_for('help_page') }}">{{ t('nav_help') }}</a>
         {% if g.username %}
           <a href="{{ url_for('auth.team_page') }}">{{ t('nav_team') }}</a>
-          <a href="{{ url_for('auth.logout') }}">{{ t('nav_logout', name=g.user) }}</a>
+          <a href="{{ url_for('auth.logout') }}">{{ t('nav_logout') }}
+            <span class="data">({{ g.user }})</span></a>
         {% endif %}
         <a class="lang" href="{{ lang_target }}" rel="nofollow">{{ t('lang_switch') }}</a>
       </nav>

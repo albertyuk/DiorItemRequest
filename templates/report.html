@@ -23,7 +23,7 @@
     </p>
   {% endif %}
   <p><a class="button" href="{{ url_for('download', run_id=run_id) }}">
-    {{ t('download_label', name=download_name) }}</a>
+    {{ t('download_btn') }} <span class="data">{{ download_name }}</span></a>
     <a class="btn-quiet" href="{{ url_for('index') }}"
        style="margin-left:.6rem">{{ t('new_run') | safe }}</a></p>
 

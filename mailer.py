@@ -72,8 +72,9 @@ def _layout(title_en: str, title_zh: str, body_en: str, body_zh: str,
   <p><strong>{title_en}</strong><br>{body_en}</p>
   <p><strong>{title_zh}</strong><br>{body_zh}</p>
   <p style="margin:1.4rem 0">
-    <a href="{safe_link}" style="background:#2c7a44;color:#fff;padding:.6rem
-       1.4rem;border-radius:8px;text-decoration:none">{button}</a></p>
+    <a href="{safe_link}" style="background:#1a1a1a;color:#fff;padding:.7rem
+       1.6rem;text-decoration:none;letter-spacing:.12em;
+       text-transform:uppercase;font-size:.8rem">{button}</a></p>
   <p style="color:#69737d;font-size:.9rem">{note_en}<br>{note_zh}</p>
   <p style="color:#69737d;font-size:.85rem;word-break:break-all">{safe_link}</p>
 </div>"""
