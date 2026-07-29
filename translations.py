@@ -67,6 +67,22 @@ STRINGS = {
                            "AI-located columns"),
         "ai_none": ("The AI reviewed the sheet headers and found no SKU "
                     "columns beyond what the standard scan already covers."),
+        "ai_confirmed_note": ("&#10003; You reviewed and confirmed these "
+                              "columns before processing."),
+        "ai_all_deselected": ("You unticked every detected column, so only "
+                              "the standard scan was used."),
+        "page_confirm": "verify SKU columns",
+        "confirm_heading": "Verify the AI-detected SKU columns",
+        "confirm_intro": ("Claude analyzed <strong>{map}</strong> and "
+                          "believes the columns below contain SKUs. Check "
+                          "the sample values: keep a column ticked only if "
+                          "those really are SKU codes. Unticked columns are "
+                          "ignored, and the standard pattern scan always "
+                          "runs either way — nothing has been processed "
+                          "yet."),
+        "th_use": "Use", "th_samples": "Sample values",
+        "confirm_btn": "Looks right — process",
+        "confirm_cancel": "Cancel and start over",
         "ai_failed": ("AI column detection was unavailable this run: "
                       "{detail}. The standard scan still ran in full."),
         "ai_off": ("AI column detection is off — set the ANTHROPIC_API_KEY "
@@ -184,6 +200,17 @@ STRINGS = {
         "ai_th_header": "表头", "ai_th_reason": "判断依据",
         "ai_found_cells": "{sheet}：{n} 个标黄单元格仅通过 AI 识别的列找到（点击查看）",
         "ai_none": "AI 检查了各工作表的表头，没有发现标准扫描之外的 SKU 列。",
+        "ai_confirmed_note": "&#10003; 这些列已经过你的人工确认，才用于本次处理。",
+        "ai_all_deselected": "你取消了所有识别出的列，本次仅使用标准扫描。",
+        "page_confirm": "确认 SKU 列",
+        "confirm_heading": "请确认 AI 识别的 SKU 列",
+        "confirm_intro": ("Claude 分析了 <strong>{map}</strong>，"
+                          "认为下列各列包含 SKU。请核对示例值：只有确实是 SKU "
+                          "编码的列才保持勾选；取消勾选的列会被忽略。无论如何，"
+                          "标准扫描都会照常进行 — 目前还没有开始正式处理。"),
+        "th_use": "使用", "th_samples": "示例值",
+        "confirm_btn": "确认无误，开始处理",
+        "confirm_cancel": "取消并返回",
         "ai_failed": "本次运行 AI 识别不可用：{detail}。标准扫描已正常完成。",
         "ai_off": ("AI 识别功能未开启 — 配置 ANTHROPIC_API_KEY 密钥即可启用。"
                    "标准扫描已正常完成。"),

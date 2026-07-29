@@ -262,6 +262,106 @@ def test_locator_previews_and_normalization(tmp_path):
                                             "reason": "ok"}]}]
 
 
+def _verification_app(tmp_path, monkeypatch, detection):
+    """App with a faked AI locator: configured, returns `detection`."""
+    monkeypatch.setattr(sku_locator, "is_configured", lambda: True)
+    monkeypatch.setattr(sku_locator, "locate_from_previews",
+                        lambda previews: detection)
+    app = create_app(data_dir=tmp_path / "data", password="")
+    map_path = tmp_path / "track.xlsx"
+    _track_workbook(map_path)
+    qwb = Workbook()
+    qws = qwb.active
+    qws.title = "query"
+    qws.append(pipeline.QUERY_HEADERS)
+    qws.append(["3617000000001", "641V19A1491 - X8300 - T36", "d", "dep",
+                "s", None, None, None, 1, 10, 20, "t", "p"])
+    query_path = tmp_path / "q.xlsx"
+    qwb.save(query_path)
+    return app.test_client(), map_path, query_path
+
+
+def test_human_verification_flow(tmp_path, monkeypatch):
+    detection = [{"sheet": "Track", "header_row": 1,
+                  "sku_columns": [{"column": "A", "header": "SKU",
+                                   "reason": "data cells hold item codes"}]}]
+    client, map_path, query_path = _verification_app(
+        tmp_path, monkeypatch, detection)
+
+    # phase 1: upload pauses on the verification page instead of processing
+    with map_path.open("rb") as m, query_path.open("rb") as q:
+        resp = client.post(
+            "/process",
+            data={"map_file": (m, "track.xlsx"), "query_file": (q, "q.xlsx")},
+            content_type="multipart/form-data",
+        )
+    assert resp.status_code == 200
+    html = resp.data.decode()
+    assert "Verify the AI-detected SKU columns" in html
+    assert "M0715OUQO_M900_TU" in html          # sample values shown
+    assert 'name="col" value="0:0" checked' in html.replace("\n", " ").replace("  ", " ") \
+        or re.search(r'name="col"\s+value="0:0"\s+checked', html)
+    action = re.search(r'action="/process/(\d{8}_\d{6}_[0-9a-f]{6})"', html)
+    assert action, "confirmation form must post to /process/<pending_id>"
+    pending_id = action.group(1)
+
+    # phase 2: confirm the column -> full run -> report marks it confirmed
+    resp = client.post(f"/process/{pending_id}", data={"col": "0:0"},
+                       follow_redirects=True)
+    assert resp.status_code == 200
+    html = resp.data.decode()
+    assert "You reviewed and confirmed these columns" in html
+    assert "641V19A1491" in html                # matched via the AI column
+    assert "M0715OUQO_M900_TU" in html          # unmatched, still traced
+
+    # the pending upload is consumed: files gone, replay 404s
+    assert not list((tmp_path / "data" / "pending").glob("*"))
+    assert client.post(f"/process/{pending_id}", data={}).status_code == 404
+
+
+def test_verification_deselect_all_falls_back_to_standard_scan(
+        tmp_path, monkeypatch):
+    detection = [{"sheet": "Track", "header_row": 1,
+                  "sku_columns": [{"column": "A", "header": "SKU",
+                                   "reason": "codes"}]}]
+    client, map_path, query_path = _verification_app(
+        tmp_path, monkeypatch, detection)
+    with map_path.open("rb") as m, query_path.open("rb") as q:
+        resp = client.post(
+            "/process",
+            data={"map_file": (m, "track.xlsx"), "query_file": (q, "q.xlsx")},
+            content_type="multipart/form-data",
+        )
+    pending_id = re.search(r'action="/process/([0-9_a-f]+)"',
+                           resp.data.decode()).group(1)
+
+    # submit with every checkbox unticked
+    resp = client.post(f"/process/{pending_id}", data={},
+                       follow_redirects=True)
+    assert resp.status_code == 200
+    html = resp.data.decode()
+    assert "You unticked every detected column" in html
+    # none of the non-standard SKUs were extracted
+    assert "M0715OUQO_M900_TU" not in html
+
+
+def test_verification_skipped_when_nothing_detected(tmp_path, monkeypatch):
+    client, map_path, query_path = _verification_app(
+        tmp_path, monkeypatch, detection=[])
+    with map_path.open("rb") as m, query_path.open("rb") as q:
+        resp = client.post(
+            "/process",
+            data={"map_file": (m, "track.xlsx"), "query_file": (q, "q.xlsx")},
+            content_type="multipart/form-data",
+            follow_redirects=True,
+        )
+    # no confirmation page: straight to the report
+    assert resp.status_code == 200
+    html = resp.data.decode()
+    assert "Verify the AI-detected" not in html
+    assert "found no SKU columns" in html
+
+
 @pytest.mark.skipif(
     not sku_locator.is_configured()
     or not (SAMPLES / "delivery_track.xlsx").exists(),

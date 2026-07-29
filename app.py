@@ -28,7 +28,12 @@ log = logging.getLogger("app")
 
 RUN_ID_RE = re.compile(r"^\d{8}_\d{6}_[0-9a-f]{6}$")
 KEEP_OUTPUTS = 10
+KEEP_PENDING = 5  # uploads awaiting human column verification
 MAX_UPLOAD_BYTES = 200 * 1024 * 1024
+
+
+def _new_id() -> str:
+    return f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
 
 
 def report_to_dict(report: "pipeline.RunReport", map_filename: str) -> dict:
@@ -53,6 +58,7 @@ def report_to_dict(report: "pipeline.RunReport", map_filename: str) -> dict:
         "ai_enabled": report.ai_enabled,
         "ai_detection": report.ai_detection,
         "ai_note": report.ai_note,
+        "ai_confirmed": report.ai_confirmed,
         "bases": report.bases,
         "base_skus": report.base_skus,
         "matched_counts": report.matched_counts,
@@ -87,10 +93,11 @@ def create_app(data_dir: Path | str | None = None,
 
     outputs_dir = data_dir / "outputs"
     tmp_dir = data_dir / "tmp"
+    pending_dir = data_dir / "pending"
     stored_query = data_dir / "query.xlsx"
     query_meta_path = data_dir / "query_meta.json"
     template_path = Path(__file__).parent / "assets" / "ProductsListTemplate.xlsx"
-    for d in (data_dir, outputs_dir, tmp_dir):
+    for d in (data_dir, outputs_dir, tmp_dir, pending_dir):
         d.mkdir(parents=True, exist_ok=True)
 
     app = Flask(__name__)
@@ -124,8 +131,46 @@ def create_app(data_dir: Path | str | None = None,
         s = STRINGS.get(lang, STRINGS["en"]).get(key) or STRINGS["en"][key]
         return s.format(**fmt) if fmt else s
 
+    def prune_pending() -> None:
+        files = sorted(pending_dir.glob("map_*.xlsx"),
+                       key=lambda p: p.stat().st_mtime, reverse=True)
+        for stale in files[KEEP_PENDING:]:
+            pending_id = stale.stem[len("map_"):]
+            (pending_dir / f"pending_{pending_id}.json").unlink(missing_ok=True)
+            stale.unlink(missing_ok=True)
+
     def error_page(key: str, status: int = 400, **fmt):
         return render_template("error.html", message=tr(key, **fmt)), status
+
+    def execute_run(map_path: Path, map_filename: str, ai_result: dict):
+        """Run the full pipeline on a saved map and redirect to the report.
+        Shared by the direct path and the post-verification path."""
+        if not stored_query.exists():
+            map_path.unlink(missing_ok=True)
+            return error_page("err_no_query")
+        run_id = _new_id()
+        out_path = outputs_dir / f"ProductsList_{run_id}.xlsx"
+        try:
+            report = pipeline.run_pipeline(
+                map_path, stored_query, template_path, out_path,
+                ai_result=ai_result)
+        except Exception as exc:
+            # Malformed maps fail in many shapes (BadZipFile, XML
+            # ParseError, KeyError, ...) — all must land on the friendly
+            # error page, never the bare 500.
+            out_path.unlink(missing_ok=True)
+            log.exception("processing failed")
+            return error_page("err_map_failed", detail=str(exc))
+        finally:
+            map_path.unlink(missing_ok=True)
+
+        # Persist the run report next to the output so the report page is
+        # refresh-safe and can be re-rendered later in either language.
+        (outputs_dir / f"report_{run_id}.json").write_text(
+            json.dumps(report_to_dict(report, map_filename),
+                       ensure_ascii=False))
+        prune_outputs()
+        return redirect(url_for("report_page", run_id=run_id))
 
     # --- language -----------------------------------------------------------
 
@@ -205,33 +250,69 @@ def create_app(data_dir: Path | str | None = None,
             return error_page("err_no_query")
 
         map_tmp = save_upload(map_file, "map")
-        run_at = datetime.now()
-        # The uuid suffix keeps concurrent runs (2 gunicorn threads) from
-        # sharing an output path and serving each other's workbooks.
-        run_id = f"{run_at.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
-        out_path = outputs_dir / f"ProductsList_{run_id}.xlsx"
-        locator = sku_locator.locate if sku_locator.is_configured() else None
-        try:
-            report = pipeline.run_pipeline(
-                map_tmp, stored_query, template_path, out_path,
-                locator=locator)
-        except Exception as exc:
-            # Malformed maps fail in many shapes (BadZipFile, XML
-            # ParseError, KeyError, ...) — all must land on the friendly
-            # error page, never the bare 500.
-            out_path.unlink(missing_ok=True)
-            log.exception("processing failed")
-            return error_page("err_map_failed", detail=str(exc))
-        finally:
-            map_tmp.unlink(missing_ok=True)
+        ai_result = {"enabled": False, "detection": None, "note": None,
+                     "confirmed": False}
+        if sku_locator.is_configured():
+            ai_result["enabled"] = True
+            try:
+                previews = sku_locator.build_previews(map_tmp)
+                detection = sku_locator.locate_from_previews(previews)
+            except Exception as exc:
+                log.warning("SKU column detection unavailable: %s", exc)
+                ai_result["note"] = str(exc)
+            else:
+                if detection:
+                    # Human verification: park the upload and show the
+                    # detected columns (with sample values) before the
+                    # heavy processing run uses them.
+                    pending_id = _new_id()
+                    map_tmp.replace(pending_dir / f"map_{pending_id}.xlsx")
+                    samples = sku_locator.column_samples(previews, detection)
+                    (pending_dir / f"pending_{pending_id}.json").write_text(
+                        json.dumps({
+                            "map_filename": map_file.filename,
+                            "detection": detection,
+                            "samples": samples,
+                        }, ensure_ascii=False))
+                    prune_pending()
+                    return render_template(
+                        "confirm.html",
+                        pending_id=pending_id,
+                        map_filename=map_file.filename,
+                        detection=detection,
+                        samples=samples,
+                    )
+                ai_result["detection"] = detection  # []: nothing detected
 
-        # Persist the run report next to the output so the report page is
-        # refresh-safe and can be re-rendered later in either language.
-        (outputs_dir / f"report_{run_id}.json").write_text(
-            json.dumps(report_to_dict(report, map_file.filename),
-                       ensure_ascii=False))
-        prune_outputs()
-        return redirect(url_for("report_page", run_id=run_id))
+        return execute_run(map_tmp, map_file.filename, ai_result)
+
+    @app.post("/process/<pending_id>")
+    def process_confirm(pending_id: str):
+        """Phase 2: the human reviewed the AI-detected columns; run the
+        pipeline with only the columns they kept ticked."""
+        if not RUN_ID_RE.match(pending_id):
+            abort(404)
+        map_path = pending_dir / f"map_{pending_id}.xlsx"
+        meta_path = pending_dir / f"pending_{pending_id}.json"
+        if not (map_path.exists() and meta_path.exists()):
+            abort(404)
+        meta = json.loads(meta_path.read_text())
+        meta_path.unlink(missing_ok=True)
+
+        selected = set(request.form.getlist("col"))
+        confirmed = []
+        for si, entry in enumerate(meta.get("detection", [])):
+            kept = [col for ci, col in enumerate(entry["sku_columns"])
+                    if f"{si}:{ci}" in selected]
+            if kept:
+                confirmed.append({**entry, "sku_columns": kept})
+        log.info("column verification %s: kept %s", pending_id,
+                 [(e["sheet"], [c["column"] for c in e["sku_columns"]])
+                  for e in confirmed])
+        return execute_run(
+            map_path, meta.get("map_filename", ""),
+            {"enabled": True, "detection": confirmed, "note": None,
+             "confirmed": True})
 
     @app.get("/report/<run_id>")
     def report_page(run_id: str):

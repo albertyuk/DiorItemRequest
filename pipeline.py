@@ -363,6 +363,7 @@ class RunReport:
     ai_enabled: bool = False             # was an AI column locator supplied?
     ai_detection: list | None = None     # locator output per sheet
     ai_note: str | None = None           # why detection is missing/failed
+    ai_confirmed: bool = False           # did a human review the columns?
 
 
 def build_ai_columns(detection) -> dict:
@@ -391,17 +392,31 @@ def _trace_rows(rows) -> list[dict]:
 
 
 def run_pipeline(map_path, query_path, template_path, out_path,
-                 locator=None) -> RunReport:
+                 locator=None, ai_result: dict | None = None) -> RunReport:
     """locator (optional): callable(map_path) -> detection list, as returned
-    by sku_locator.locate. Any locator failure is reported, never fatal."""
-    ai_detection = None
-    ai_note = None
-    if locator is not None:
-        try:
-            ai_detection = locator(map_path)
-        except Exception as exc:
-            log.warning("SKU column detection unavailable: %s", exc)
-            ai_note = str(exc)
+    by sku_locator.locate. Any locator failure is reported, never fatal.
+
+    ai_result (optional) supplies pre-computed detection state instead —
+    used when detection ran earlier and a human confirmed the columns:
+    {"enabled": bool, "detection": list|None, "note": str|None,
+     "confirmed": bool}.
+    """
+    if ai_result is not None:
+        ai_enabled = bool(ai_result.get("enabled"))
+        ai_detection = ai_result.get("detection")
+        ai_note = ai_result.get("note")
+        ai_confirmed = bool(ai_result.get("confirmed"))
+    else:
+        ai_enabled = locator is not None
+        ai_confirmed = False
+        ai_detection = None
+        ai_note = None
+        if locator is not None:
+            try:
+                ai_detection = locator(map_path)
+            except Exception as exc:
+                log.warning("SKU column detection unavailable: %s", exc)
+                ai_note = str(exc)
     scan = scan_sell_thru_map(map_path,
                               ai_columns=build_ai_columns(ai_detection))
     bases = scan.bases
@@ -423,9 +438,10 @@ def run_pipeline(map_path, query_path, template_path, out_path,
         unmatched=unmatched,
         other_fills=scan.other_fills,
         rows_written=rows_written,
-        ai_enabled=locator is not None,
+        ai_enabled=ai_enabled,
         ai_detection=ai_detection,
         ai_note=ai_note,
+        ai_confirmed=ai_confirmed,
     )
     log.info(
         "run: sheets=%s bases=%d matched=%d unmatched=%d rows=%d other_fills=%d",

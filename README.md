@@ -42,6 +42,13 @@ workbook) to Claude, which returns the header row and SKU column(s) per
 sheet. Highlighted cells in those columns are then extracted too, and the
 run report shows what was detected and why (`sku_locator.py`).
 
+Detection is **human-verified**: when the AI finds SKU columns, the upload
+pauses on a verification page showing each detected column with its header,
+the model's reasoning, and real sample values. Only the columns you keep
+ticked are used; unticking everything (or cancelling) falls back to the
+standard scan. The heavy processing runs only after you confirm, and the
+run report records that the columns were human-confirmed.
+
 ```bash
 fly secrets set ANTHROPIC_API_KEY=sk-ant-...   # or export it locally
 ```

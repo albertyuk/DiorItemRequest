@@ -156,6 +156,30 @@ def _normalize(raw_sheets, known_sheets) -> list[dict]:
     return detection
 
 
+def column_samples(previews, detection, limit: int = 6) -> dict:
+    """Real cell values from each detected column, for the human
+    verification page: {sheet: {column: [values]}}. Values come from the
+    preview rows below the header row."""
+    by_sheet = {p["sheet"]: p["rows"] for p in previews}
+    samples: dict = {}
+    for entry in detection:
+        rows = by_sheet.get(entry["sheet"]) or {}
+        header_row = entry.get("header_row") or 0
+        for col in entry["sku_columns"]:
+            letter = col["column"]
+            values = []
+            for row_num in sorted(rows, key=int):
+                if int(row_num) <= header_row:
+                    continue
+                value = rows[row_num].get(letter)
+                if value and not value.startswith("=") and value not in values:
+                    values.append(value)
+                if len(values) >= limit:
+                    break
+            samples.setdefault(entry["sheet"], {})[letter] = values
+    return samples
+
+
 def locate(map_path, model: str | None = None, client=None) -> list[dict]:
     """Identify SKU columns for every sheet of the workbook at map_path.
 
@@ -163,9 +187,16 @@ def locate(map_path, model: str | None = None, client=None) -> list[dict]:
     Raises SkuLocatorError on any failure — callers treat it as "detection
     unavailable", never as a fatal pipeline error.
     """
+    return locate_from_previews(build_previews(map_path), model=model,
+                                client=client)
+
+
+def locate_from_previews(previews, model: str | None = None,
+                         client=None) -> list[dict]:
+    """API half of locate(); takes previews from build_previews so callers
+    can reuse them (e.g. for the verification page's sample values)."""
     import anthropic
 
-    previews = build_previews(map_path)
     if not previews:
         return []
 
