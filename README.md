@@ -42,6 +42,14 @@ workbook) to Claude, which returns the header row and SKU column(s) per
 sheet. Highlighted cells in those columns are then extracted too, and the
 run report shows what was detected and why (`sku_locator.py`).
 
+Approved mappings are **remembered**: when a reviewer builds a run keeping
+AI-found SKUs, the sheet's columns are stored under a fingerprint of its
+header row (`data/column_memory.json`). The next upload of the same layout
+gets those columns from memory — pre-approved, marked "remembered" on the
+review page, no AI call for that sheet. Excluding every AI-found SKU of a
+sheet at review drops its stored mapping. A layout change (shifted or
+renamed headers) misses the fingerprint and falls back to fresh detection.
+
 Every run pauses on a **review checkpoint** before anything is written:
 the page lists each extracted SKU (colorways, source sheets, stock-row
 count, an AI badge for AI-located columns with sample values and the
@@ -104,9 +112,15 @@ fly deploy --ha=false
 
 Notes:
 
-- **`APP_PASSWORD` is required in production** — the app refuses to start on
-  Fly without it (it fronts internal pricing data). Every route is behind
-  HTTP Basic auth: any username, this password.
+- **Authentication is required in production** — the app refuses to start
+  on Fly without it (it fronts internal pricing data). Two modes:
+  - **Named users (recommended):**
+    `fly secrets set APP_USERS='albert:pw1,vivian:pw2'` — each person logs
+    in with their own name and password (username case-insensitive), and
+    every run records who uploaded it and who reviewed & built it (shown
+    on the report and the recent-runs list).
+  - **Shared password:** `fly secrets set APP_PASSWORD=...` — any username,
+    one password. Works alongside `APP_USERS` as a fallback.
 - The machine needs **1 GB memory** (set in `fly.toml`) — parsing the ~70 MB
   map read-only peaks well above the 256 MB default.
 - **Deploy with `--ha=false` (single machine).** Fly's default first deploy

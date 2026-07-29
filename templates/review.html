@@ -16,11 +16,14 @@
   {% if ai.get('detection') %}
     <div class="card">
       <h3>{{ t('ai_heading') }}</h3>
-      <p class="muted">{{ t('review_ai_intro') }}</p>
+      <p class="muted">{{ t('review_ai_intro') }}
+        {% if ai.detection | selectattr('source', 'equalto', 'memory') | list %}
+          {{ t('review_memory_note') }}
+        {% endif %}</p>
       <table>
         <tr><th>{{ t('th_sheet') }}</th><th>{{ t('ai_th_column') }}</th>
             <th>{{ t('ai_th_header') }}</th><th>{{ t('th_samples') }}</th>
-            <th>{{ t('ai_th_reason') }}</th></tr>
+            <th>{{ t('th_source') }}</th><th>{{ t('ai_th_reason') }}</th></tr>
         {% for d in ai.detection %}
           {% for c in d.sku_columns %}
             <tr>
@@ -28,6 +31,11 @@
               <td>{{ c.column }}</td>
               <td>{{ c.header if c.header else "—" }}</td>
               <td class="muted">{{ ai.get('samples', {}).get(d.sheet, {}).get(c.column, []) | join(", ") }}</td>
+              <td>{% if d.get('source') == 'memory' %}
+                    <span class="badge badge-ok">{{ t('src_memory') }}</span>
+                  {% else %}
+                    <span class="badge badge-ai">{{ t('src_ai') }}</span>
+                  {% endif %}</td>
               <td class="muted">{{ c.reason }}</td>
             </tr>
           {% endfor %}

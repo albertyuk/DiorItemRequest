@@ -101,6 +101,13 @@ STRINGS = {
         "th_rows_written": "Rows",
         "query_used": ("Stock query used: <strong>{name}</strong> — {rows} "
                        "rows, uploaded {time}."),
+        "th_source": "Source", "src_ai": "AI", "src_memory": "remembered",
+        "review_memory_note": ("Columns marked “remembered” were approved "
+                               "on a previous run — no AI call was needed "
+                               "for them."),
+        "by_uploaded": "Uploaded by {name}",
+        "by_built": "Reviewed & built by {name}",
+        "th_user": "By",
         "excluded_heading": "Excluded at review ({n})",
         "excluded_note": ("These highlighted SKUs were unticked on the "
                           "review page and left out of the workbook."),
@@ -262,6 +269,12 @@ STRINGS = {
         "th_rows_written": "行数",
         "query_used": ("使用的库存查询表：<strong>{name}</strong>，"
                        "共 {rows} 行，上传于 {time}。"),
+        "th_source": "来源", "src_ai": "AI", "src_memory": "已记住",
+        "review_memory_note": ("标注“已记住”的列来自之前运行时的人工确认，"
+                               "本次无需再调用 AI。"),
+        "by_uploaded": "上传：{name}",
+        "by_built": "确认并生成：{name}",
+        "th_user": "操作人",
         "excluded_heading": "确认时排除的款号（{n} 个）",
         "excluded_note": "以下标黄款号在确认页被取消勾选，未写入工作簿。",
         "page_progress": "正在处理",

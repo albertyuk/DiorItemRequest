@@ -17,9 +17,15 @@ import pytest
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Color, PatternFill
 
+import column_memory
 import pipeline
 import sku_locator
-from app import create_app
+from app import create_app, parse_users
+
+
+def _basic(user, password):
+    token = base64.b64encode(f"{user}:{password}".encode()).decode()
+    return {"Authorization": f"Basic {token}"}
 
 SAMPLES = Path(__file__).parent / "samples"
 MAP = SAMPLES / "sell_thru_map.xlsx"
@@ -297,7 +303,8 @@ def test_locator_previews_and_normalization(tmp_path):
     normalized = sku_locator._normalize(raw, ["Track"])
     assert normalized == [{"sheet": "Track", "header_row": 1,
                            "sku_columns": [{"column": "A", "header": "SKU",
-                                            "reason": "ok"}]}]
+                                            "reason": "ok"}],
+                           "source": "ai"}]
     # sheets where the model found no SKU columns are dropped entirely —
     # the realistic "nothing found" answer is per-sheet empty lists, and
     # it must not read as a positive detection
@@ -409,6 +416,156 @@ def test_review_skipped_when_nothing_found(tmp_path, monkeypatch, detection):
     html = client.get(data["next"]).data.decode()
     assert "found no SKU columns" in html
     assert "unticked" not in html
+
+
+def test_column_memory_fingerprint_and_lookup(tmp_path):
+    cells = {"A": " Capsule ", "B": "TS  SKU", "C": "Qty"}
+    fp = column_memory.fingerprint_row(cells)
+    # normalization: whitespace and case do not change the fingerprint
+    assert fp == column_memory.fingerprint_row(
+        {"A": "capsule", "B": "ts sku", "C": "QTY"})
+    # a shifted layout (same headers, different letters) misses safely
+    assert fp != column_memory.fingerprint_row(
+        {"B": "Capsule", "C": "TS SKU", "D": "Qty"})
+    # near-empty rows carry no identity
+    assert column_memory.fingerprint_row({"A": "SKU"}) == ""
+
+    store = tmp_path / "mem.json"
+    entry = {"sheet": "Track", "header_row": 1, "fingerprint": fp,
+             "header_cells": cells,
+             "sku_columns": [{"column": "B", "header": "TS SKU",
+                              "reason": "codes"}]}
+    column_memory.remember(store, entry, user="albert")
+    previews = [{"sheet": "Other name, same layout",
+                 "rows": {"1": {"A": "CAPSULE", "B": "TS SKU", "C": "Qty"},
+                          "2": {"B": "M0759OWKAM912"}}}]
+    remembered, unknown = column_memory.lookup(previews, store)
+    assert unknown == []
+    assert remembered[0]["sku_columns"][0]["column"] == "B"
+    assert remembered[0]["source"] == "memory"
+    assert remembered[0]["header_row"] == 1
+
+    # header text at the stored letter must still match
+    shifted = [{"sheet": "S", "rows": {"1": {"A": "CAPSULE", "B": "Renamed",
+                                             "C": "Qty"}}}]
+    remembered, unknown = column_memory.lookup(shifted, store)
+    assert remembered == [] and len(unknown) == 1
+
+    column_memory.forget(store, fp)
+    remembered, _ = column_memory.lookup(previews, store)
+    assert remembered == []
+
+
+def test_column_memory_flow(tmp_path, monkeypatch):
+    """Approving a sheet's AI columns stores the mapping; the next upload of
+    the same layout is served from memory without calling the AI."""
+    detection = [{"sheet": "Track", "header_row": 1,
+                  "sku_columns": [{"column": "A", "header": "SKU",
+                                   "reason": "codes"}]}]
+    calls = {"n": 0}
+
+    def fake_locate(previews):
+        calls["n"] += 1
+        column_memory.attach_fingerprints(detection, previews)
+        return [dict(e, source="ai") for e in detection]
+
+    monkeypatch.setattr(sku_locator, "is_configured", lambda: True)
+    monkeypatch.setattr(sku_locator, "locate_from_previews", fake_locate)
+    app = create_app(data_dir=tmp_path / "data", password="")
+    client = app.test_client()
+    map_path = tmp_path / "track.xlsx"
+    _track_workbook(map_path)
+    qwb = Workbook()
+    qws = qwb.active
+    qws.title = "query"
+    qws.append(pipeline.QUERY_HEADERS)
+    query_path = tmp_path / "q.xlsx"
+    qwb.save(query_path)
+
+    # run 1: AI detects, reviewer keeps the AI-found SKUs -> remembered
+    data, _ = _finish_job(client, _upload(client, map_path, query_path))
+    assert calls["n"] == 1
+    html = client.get(data["next"]).data.decode()
+    skus = re.findall(r'name="sku" value="([^"]+)"', html)
+    build = re.search(r'action="(/review/[0-9_a-f]+/build)"', html).group(1)
+    client.post(build, data={"sku": skus})
+    assert (tmp_path / "data" / "column_memory.json").exists()
+
+    # run 2: same layout -> columns come from memory, no second AI call
+    data, _ = _finish_job(client, _upload(client, map_path, query_path,
+                                          extra_query=False))
+    assert calls["n"] == 1, "memory hit must not call the AI again"
+    html = client.get(data["next"]).data.decode()
+    assert "remembered" in html          # source badge on the review page
+    assert set(re.findall(r'name="sku" value="([^"]+)"', html)) \
+        == {"M0715OUQO_M900_TU", "641V19A1491"}
+
+    # run 2 build excluding EVERY AI-found SKU -> mapping is dropped
+    build = re.search(r'action="(/review/[0-9_a-f]+/build)"', html).group(1)
+    client.post(build, data={})
+    # run 3: memory is gone, the AI is consulted again
+    data, _ = _finish_job(client, _upload(client, map_path, query_path,
+                                          extra_query=False))
+    assert calls["n"] == 2
+
+
+def test_named_users_auth_and_identity(tmp_path, monkeypatch):
+    """Per-person logins; runs record who uploaded and who built."""
+    assert parse_users("albert:pw1, vivian:pw2,, bad, x:") == \
+        {"albert": "pw1", "vivian": "pw2"}
+    assert parse_users("a:p:w")["a"] == "p:w"  # colon allowed in password
+
+    detection = [{"sheet": "Track", "header_row": 1,
+                  "sku_columns": [{"column": "A", "header": "SKU",
+                                   "reason": "codes"}]}]
+    monkeypatch.setattr(sku_locator, "is_configured", lambda: True)
+    monkeypatch.setattr(sku_locator, "locate_from_previews",
+                        lambda previews: detection)
+    app = create_app(data_dir=tmp_path / "data", password="",
+                     users={"Albert": "pw1", "vivian": "pw2"})
+    client = app.test_client()
+
+    assert client.get("/").status_code == 401
+    assert client.get("/", headers=_basic("albert", "wrong")).status_code == 401
+    assert client.get("/", headers=_basic("stranger", "pw1")).status_code == 401
+    # correct login, case-insensitive username
+    assert client.get("/", headers=_basic("ALBERT", "pw1")).status_code == 200
+
+    map_path = tmp_path / "track.xlsx"
+    _track_workbook(map_path)
+    qwb = Workbook()
+    qws = qwb.active
+    qws.title = "query"
+    qws.append(pipeline.QUERY_HEADERS)
+    query_path = tmp_path / "q.xlsx"
+    qwb.save(query_path)
+
+    # albert uploads; vivian reviews and builds
+    with map_path.open("rb") as m, query_path.open("rb") as q:
+        resp = client.post(
+            "/process",
+            data={"map_file": (m, "t.xlsx"), "query_file": (q, "q.xlsx")},
+            content_type="multipart/form-data",
+            headers=_basic("albert", "pw1"))
+    assert resp.status_code == 302
+    job = resp.headers["Location"].rsplit("/", 1)[-1]
+    while True:
+        d = client.get(f"/progress/{job}/status",
+                       headers=_basic("albert", "pw1")).get_json()
+        if d["status"] != "running":
+            break
+        time.sleep(0.2)
+    html = client.get(d["next"], headers=_basic("vivian", "pw2")).data.decode()
+    skus = re.findall(r'name="sku" value="([^"]+)"', html)
+    build = re.search(r'action="(/review/[0-9_a-f]+/build)"', html).group(1)
+    resp = client.post(build, data={"sku": skus},
+                       headers=_basic("vivian", "pw2"), follow_redirects=True)
+    html = resp.data.decode()
+    assert "Uploaded by Albert" in html          # canonical casing
+    assert "Reviewed &amp; built by vivian" in html
+    # the recent-runs list names the builder too
+    index = client.get("/", headers=_basic("albert", "pw1")).data.decode()
+    assert "vivian" in index
 
 
 def test_review_build_uses_rows_matched_at_scan_time(tmp_path, monkeypatch):

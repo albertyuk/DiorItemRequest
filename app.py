@@ -22,6 +22,7 @@ from flask import (
 )
 from werkzeug.exceptions import RequestEntityTooLarge
 
+import column_memory
 import pipeline
 import sku_locator
 from translations import STRINGS, SUPPORTED_LANGS
@@ -39,7 +40,24 @@ def _new_id() -> str:
     return f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
 
 
-def report_to_dict(report: "pipeline.RunReport", map_filename: str) -> dict:
+def parse_users(raw: str) -> dict[str, str]:
+    """APP_USERS='albert:pw1,vivian:pw2' -> {'albert': 'pw1', ...}.
+    Passwords may contain ':'; malformed entries are skipped loudly."""
+    users: dict[str, str] = {}
+    for pair in raw.split(","):
+        pair = pair.strip()
+        if not pair:
+            continue
+        name, sep, password = pair.partition(":")
+        if not sep or not name.strip() or not password:
+            log.warning("ignoring malformed APP_USERS entry %r…", pair[:12])
+            continue
+        users[name.strip()] = password
+    return users
+
+
+def report_to_dict(report: "pipeline.RunReport", map_filename: str,
+                   uploaded_by: str = "", built_by: str = "") -> dict:
     """JSON-serializable snapshot of a run, so the report page can be
     re-rendered later (and in either language)."""
     return {
@@ -60,6 +78,8 @@ def report_to_dict(report: "pipeline.RunReport", map_filename: str) -> dict:
         "other_fills": report.other_fills,
         "rows_written": report.rows_written,
         "query_info": report.query_info,
+        "uploaded_by": uploaded_by,
+        "built_by": built_by,
     }
 
 
@@ -73,16 +93,20 @@ def default_data_dir() -> Path:
 
 
 def create_app(data_dir: Path | str | None = None,
-               password: str | None = None) -> Flask:
+               password: str | None = None,
+               users: dict[str, str] | None = None) -> Flask:
     data_dir = Path(data_dir) if data_dir else default_data_dir()
     if password is None:
         password = os.environ.get("APP_PASSWORD", "")
-    if os.environ.get("FLY_APP_NAME") and not password:
+    if users is None:
+        users = parse_users(os.environ.get("APP_USERS", ""))
+    if os.environ.get("FLY_APP_NAME") and not (password or users):
         # This tool handles internal pricing data; it must never sit on a
         # public URL unauthenticated.
         raise RuntimeError(
-            "APP_PASSWORD is not set. Refusing to start unauthenticated in "
-            "production — run: fly secrets set APP_PASSWORD=..."
+            "Neither APP_USERS nor APP_PASSWORD is set. Refusing to start "
+            "unauthenticated in production — run: fly secrets set "
+            "APP_USERS='name:password,name2:password2' (or APP_PASSWORD=...)"
         )
 
     outputs_dir = data_dir / "outputs"
@@ -90,6 +114,7 @@ def create_app(data_dir: Path | str | None = None,
     pending_dir = data_dir / "pending"
     stored_query = data_dir / "query.xlsx"
     query_meta_path = data_dir / "query_meta.json"
+    memory_path = data_dir / "column_memory.json"
     template_path = Path(__file__).parent / "assets" / "ProductsListTemplate.xlsx"
     for d in (data_dir, outputs_dir, tmp_dir, pending_dir):
         d.mkdir(parents=True, exist_ok=True)
@@ -145,6 +170,7 @@ def create_app(data_dir: Path | str | None = None,
                 "run_id": run_id,
                 "map_filename": data.get("map_filename", ""),
                 "rows_written": data.get("rows_written", 0),
+                "built_by": data.get("built_by", ""),
                 "when": datetime.fromtimestamp(path.stat().st_mtime)
                         .strftime("%Y-%m-%d %H:%M"),
                 "has_output": (outputs_dir / f"ProductsList_{run_id}.xlsx").exists(),
@@ -180,7 +206,8 @@ def create_app(data_dir: Path | str | None = None,
                            and job.get("status") != "running"]:
                 del jobs[job_id]
 
-    def _build_and_store(draft: dict, selected, reviewed: bool) -> str:
+    def _build_and_store(draft: dict, selected, reviewed: bool,
+                         built_by: str = "") -> str:
         """Build the workbook + report from a draft. Fast — runs in-request."""
         run_id = _new_id()
         out_path = outputs_dir / f"ProductsList_{run_id}.xlsx"
@@ -194,13 +221,15 @@ def create_app(data_dir: Path | str | None = None,
         # Persist the run report next to the output so the report page is
         # refresh-safe and re-renderable in either language.
         (outputs_dir / f"report_{run_id}.json").write_text(
-            json.dumps(report_to_dict(report, draft.get("map_filename", "")),
+            json.dumps(report_to_dict(report, draft.get("map_filename", ""),
+                                      uploaded_by=draft.get("uploaded_by", ""),
+                                      built_by=built_by),
                        ensure_ascii=False))
         prune_outputs()
         return run_id
 
     def _run_scan_job(job_id: str, map_path: Path, map_filename: str,
-                      ai: dict) -> None:
+                      ai: dict, uploaded_by: str = "") -> None:
         """Scan + match in the background; the human review filters the
         result before anything is built."""
         job = jobs[job_id]
@@ -220,6 +249,7 @@ def create_app(data_dir: Path | str | None = None,
                 "map_filename": map_filename,
                 "ai": ai,
                 "query_info": read_query_meta(),
+                "uploaded_by": uploaded_by,
             })
             if draft["bases"]:
                 draft_id = _new_id()
@@ -243,7 +273,8 @@ def create_app(data_dir: Path | str | None = None,
         map_path.unlink(missing_ok=True)  # the map is not needed after scan
         job.update(status="done", percent=100, next=next_url)
 
-    def start_scan_job(map_path: Path, map_filename: str, ai: dict) -> str:
+    def start_scan_job(map_path: Path, map_filename: str, ai: dict,
+                       uploaded_by: str = "") -> str:
         purge_jobs()
         job_id = _new_id()
         with jobs_lock:
@@ -251,7 +282,7 @@ def create_app(data_dir: Path | str | None = None,
                             "stage": "start", "created": time.time()}
         threading.Thread(
             target=_run_scan_job, daemon=True,
-            args=(job_id, map_path, map_filename, ai),
+            args=(job_id, map_path, map_filename, ai, uploaded_by),
         ).start()
         return job_id
 
@@ -280,15 +311,26 @@ def create_app(data_dir: Path | str | None = None,
 
     @app.before_request
     def require_auth():
-        if not password:
-            return None  # local development: open access
+        if not password and not users:
+            g.user = ""  # local development: open access, anonymous
+            return None
         auth = request.authorization
         # Compare as bytes: compare_digest on str rejects non-ASCII input
         # with a TypeError, which would turn a login typo into a 500.
-        if (auth and auth.type == "basic" and auth.password
-                and hmac.compare_digest(auth.password.encode("utf-8"),
-                                        password.encode("utf-8"))):
-            return None
+        if auth and auth.type == "basic" and auth.password:
+            typed = (auth.username or "").strip()
+            for name, user_password in users.items():
+                if (name.lower() == typed.lower()
+                        and hmac.compare_digest(
+                            auth.password.encode("utf-8"),
+                            user_password.encode("utf-8"))):
+                    g.user = name  # canonical casing from the config
+                    return None
+            if password and hmac.compare_digest(
+                    auth.password.encode("utf-8"),
+                    password.encode("utf-8")):
+                g.user = typed  # shared-password fallback: name as typed
+                return None
         return Response(
             "Authentication required.", 401,
             {"WWW-Authenticate": 'Basic realm="Dior item request"'},
@@ -340,21 +382,33 @@ def create_app(data_dir: Path | str | None = None,
                               detail="not a valid .xlsx workbook")
         ai = {"enabled": False, "detection": None, "note": None,
               "samples": {}}
-        if sku_locator.is_configured():
-            ai["enabled"] = True
+        if sku_locator.is_configured() or memory_path.exists():
             try:
                 previews = sku_locator.build_previews(map_tmp)
-                detection = sku_locator.locate_from_previews(previews)
-                # sheets with no SKU columns are already dropped; keep only
-                # entries that carry actual columns (defense in depth)
-                detection = [e for e in detection if e.get("sku_columns")]
+                # sheets whose header row was approved on an earlier run
+                # come from memory; only the rest go to the AI
+                remembered, unknown = column_memory.lookup(previews,
+                                                           memory_path)
+                detection = list(remembered)
+                if unknown and sku_locator.is_configured():
+                    fresh = sku_locator.locate_from_previews(unknown)
+                    fresh = [e for e in fresh if e.get("sku_columns")]
+                    column_memory.attach_fingerprints(fresh, previews)
+                    detection += fresh
+                ai["enabled"] = (sku_locator.is_configured()
+                                 or bool(remembered))
                 ai["detection"] = detection
                 ai["samples"] = sku_locator.column_samples(previews, detection)
+                if remembered:
+                    log.info("column memory: %d sheet(s) pre-approved",
+                             len(remembered))
             except Exception as exc:
                 log.warning("SKU column detection unavailable: %s", exc)
+                ai["enabled"] = True
                 ai["note"] = str(exc)
 
-        job_id = start_scan_job(map_tmp, map_file.filename, ai)
+        job_id = start_scan_job(map_tmp, map_file.filename, ai,
+                                uploaded_by=g.get("user", ""))
         return respond_next(url_for("progress_page", job_id=job_id))
 
     @app.get("/review/<draft_id>")
@@ -401,10 +455,30 @@ def create_app(data_dir: Path | str | None = None,
         draft = json.loads(draft_path.read_text())
         draft_path.unlink(missing_ok=True)  # single-use: replays 404
         selected = request.form.getlist("sku")
-        log.info("review %s: kept %d of %d bases", draft_id,
+        log.info("review %s by %s: kept %d of %d bases", draft_id,
+                 g.get("user", "") or "anonymous",
                  len(set(selected) & set(draft.get("bases", {}))),
                  len(draft.get("bases", {})))
-        run_id = _build_and_store(draft, selected=selected, reviewed=True)
+
+        # Column memory: an approved sheet's mapping is stored for future
+        # uploads; a sheet whose AI-found SKUs were ALL unticked is treated
+        # as rejected and its stored mapping (if any) is dropped.
+        selected_set = set(selected)
+        ai_bases_by_sheet = {
+            s["name"]: {detail[2] for detail in s.get(
+                "ai_highlighted_cell_details", [])}
+            for s in draft.get("sheets", [])
+        }
+        for entry in (draft.get("ai") or {}).get("detection") or []:
+            sheet_ai_bases = ai_bases_by_sheet.get(entry.get("sheet"), set())
+            if sheet_ai_bases and not (sheet_ai_bases & selected_set):
+                column_memory.forget(memory_path, entry.get("fingerprint", ""))
+            else:
+                column_memory.remember(memory_path, entry,
+                                       user=g.get("user", ""))
+
+        run_id = _build_and_store(draft, selected=selected, reviewed=True,
+                                  built_by=g.get("user", ""))
         return redirect(url_for("report_page", run_id=run_id))
 
     @app.get("/progress/<job_id>")

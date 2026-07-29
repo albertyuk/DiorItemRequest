@@ -42,11 +42,13 @@
     {% if recent %}
       <table>
         <tr><th>{{ t('recent_map') }}</th><th>{{ t('th_rows_written') }}</th>
-            <th>{{ t('recent_when') }}</th><th></th></tr>
+            <th>{{ t('th_user') }}</th><th>{{ t('recent_when') }}</th>
+            <th></th></tr>
         {% for r in recent %}
           <tr>
             <td>{{ r.map_filename or "—" }}</td>
             <td>{{ r.rows_written }}</td>
+            <td class="muted">{{ r.built_by or "—" }}</td>
             <td class="muted">{{ r.when }}</td>
             <td><a href="{{ url_for('report_page', run_id=r.run_id) }}">{{ t('recent_report') }}</a>
                 {% if r.has_output %} ·

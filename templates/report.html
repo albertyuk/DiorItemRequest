@@ -15,6 +15,13 @@
                          rows="{:,}".format(report.query_info.rows),
                          time=report.query_info.uploaded_at | e) | safe }}</p>
   {% endif %}
+  {% if report.uploaded_by or report.built_by %}
+    <p class="muted">
+      {% if report.uploaded_by %}{{ t('by_uploaded', name=report.uploaded_by | e) }}{% endif %}
+      {%- if report.uploaded_by and report.built_by %} · {% endif -%}
+      {% if report.built_by %}{{ t('by_built', name=report.built_by | e) }}{% endif %}
+    </p>
+  {% endif %}
   <p><a class="button" href="{{ url_for('download', run_id=run_id) }}">
     {{ t('download_label', name=download_name) }}</a>
     <a class="btn-quiet" href="{{ url_for('index') }}"
@@ -70,11 +77,16 @@
     <table>
       <tr><th>{{ t('th_sheet') }}</th><th>{{ t('ai_th_header_row') }}</th>
           <th>{{ t('ai_th_column') }}</th><th>{{ t('ai_th_header') }}</th>
-          <th>{{ t('ai_th_reason') }}</th></tr>
+          <th>{{ t('th_source') }}</th><th>{{ t('ai_th_reason') }}</th></tr>
       {% for d in report.ai_detection %}
         {% for c in d.sku_columns %}
           <tr><td>{{ d.sheet }}</td><td>{{ d.header_row }}</td>
               <td>{{ c.column }}</td><td>{{ c.header }}</td>
+              <td>{% if d.get('source') == 'memory' %}
+                    <span class="badge badge-ok">{{ t('src_memory') }}</span>
+                  {% else %}
+                    <span class="badge badge-ai">{{ t('src_ai') }}</span>
+                  {% endif %}</td>
               <td>{{ c.reason }}</td></tr>
         {% endfor %}
       {% endfor %}

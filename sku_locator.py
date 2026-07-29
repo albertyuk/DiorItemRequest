@@ -163,6 +163,7 @@ def _normalize(raw_sheets, known_sheets) -> list[dict]:
                 "sheet": name,
                 "header_row": header_row,
                 "sku_columns": columns,
+                "source": "ai",
             })
     return detection
 
