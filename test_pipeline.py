@@ -509,11 +509,69 @@ def test_column_memory_flow(tmp_path, monkeypatch):
     assert calls["n"] == 2
 
 
+def test_memory_survives_ai_failure(tmp_path, monkeypatch):
+    """An API outage while detecting UNKNOWN sheets must not cost the run
+    its remembered sheets — they were approved and need no API."""
+    detection = [{"sheet": "Track", "header_row": 1,
+                  "sku_columns": [{"column": "A", "header": "SKU",
+                                   "reason": "codes"}]}]
+
+    def fake_locate(previews):
+        column_memory.attach_fingerprints(detection, previews)
+        return [dict(e, source="ai") for e in detection]
+
+    monkeypatch.setattr(sku_locator, "is_configured", lambda: True)
+    monkeypatch.setattr(sku_locator, "locate_from_previews", fake_locate)
+    app = create_app(data_dir=tmp_path / "data", password="")
+    client = app.test_client()
+    map_path = tmp_path / "track.xlsx"
+    _track_workbook(map_path)
+    qwb = Workbook()
+    qws = qwb.active
+    qws.title = "query"
+    qws.append(pipeline.QUERY_HEADERS)
+    query_path = tmp_path / "q.xlsx"
+    qwb.save(query_path)
+
+    # run 1: detect + approve -> Track's mapping is remembered
+    data, _ = _finish_job(client, _upload(client, map_path, query_path))
+    html = client.get(data["next"]).data.decode()
+    skus = re.findall(r'name="sku" value="([^"]+)"', html)
+    build = re.search(r'action="(/review/[0-9_a-f]+/build)"', html).group(1)
+    client.post(build, data={"sku": skus})
+
+    # run 2: same Track layout plus an unknown sheet, with the API down
+    def boom(previews):
+        raise sku_locator.SkuLocatorError("simulated outage")
+    monkeypatch.setattr(sku_locator, "locate_from_previews", boom)
+    map2 = tmp_path / "track2.xlsx"
+    _track_workbook(map2)
+    wb = load_workbook(map2)
+    ws = wb.create_sheet("Mystery")
+    ws["A1"] = "Something"
+    ws["B1"] = "Else"
+    ws["A2"] = "value-1"
+    wb.save(map2)
+
+    data, _ = _finish_job(client, _upload(client, map2, query_path,
+                                          extra_query=False))
+    assert data["status"] == "done", data
+    assert "/review/" in data["next"], "remembered sheet must reach review"
+    html = client.get(data["next"]).data.decode()
+    assert "remembered" in html                  # memory badge still shown
+    assert "simulated outage" in html            # failure still reported
+    # the remembered column's SKUs were extracted despite the outage
+    assert set(re.findall(r'name="sku" value="([^"]+)"', html)) \
+        == {"M0715OUQO_M900_TU", "641V19A1491"}
+
+
 def test_named_users_auth_and_identity(tmp_path, monkeypatch):
     """Per-person logins; runs record who uploaded and who built."""
     assert parse_users("albert:pw1, vivian:pw2,, bad, x:") == \
         {"albert": "pw1", "vivian": "pw2"}
     assert parse_users("a:p:w")["a"] == "p:w"  # colon allowed in password
+    # stray whitespace around the colon must not poison the password
+    assert parse_users("albert : pw1 ") == {"albert": "pw1"}
 
     detection = [{"sheet": "Track", "header_row": 1,
                   "sku_columns": [{"column": "A", "header": "SKU",
@@ -566,6 +624,22 @@ def test_named_users_auth_and_identity(tmp_path, monkeypatch):
     # the recent-runs list names the builder too
     index = client.get("/", headers=_basic("albert", "pw1")).data.decode()
     assert "vivian" in index
+
+
+def test_shared_password_cannot_impersonate_named_user(tmp_path):
+    """With both APP_USERS and APP_PASSWORD set, the shared password signs
+    in any NEW name but never a configured user's — the run history would
+    otherwise be forgeable."""
+    app = create_app(data_dir=tmp_path / "data", password="shared",
+                     users={"Albert": "pw1"})
+    client = app.test_client()
+    # a named user with their own password: fine
+    assert client.get("/", headers=_basic("albert", "pw1")).status_code == 200
+    # anyone else with the shared password: fine, identity as typed
+    assert client.get("/", headers=_basic("guest", "shared")).status_code == 200
+    # the shared password must NOT work under a configured user's name
+    assert client.get("/", headers=_basic("albert", "shared")).status_code == 401
+    assert client.get("/", headers=_basic("ALBERT", "shared")).status_code == 401
 
 
 def test_review_build_uses_rows_matched_at_scan_time(tmp_path, monkeypatch):

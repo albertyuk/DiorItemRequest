@@ -49,6 +49,9 @@ gets those columns from memory — pre-approved, marked "remembered" on the
 review page, no AI call for that sheet. Excluding every AI-found SKU of a
 sheet at review drops its stored mapping. A layout change (shifted or
 renamed headers) misses the fingerprint and falls back to fresh detection.
+Remembered sheets keep working even when the API call for the other sheets
+fails — the failure is reported on the review page and run report, but it
+never costs the run its approved mappings.
 
 Every run pauses on a **review checkpoint** before anything is written:
 the page lists each extracted SKU (colorways, source sheets, stock-row
@@ -120,7 +123,9 @@ Notes:
     every run records who uploaded it and who reviewed & built it (shown
     on the report and the recent-runs list).
   - **Shared password:** `fly secrets set APP_PASSWORD=...` — any username,
-    one password. Works alongside `APP_USERS` as a fallback.
+    one password. Works alongside `APP_USERS` as a fallback, except that it
+    cannot sign in under a configured user's name — each named account only
+    accepts its own password, so the run history cannot be forged.
 - The machine needs **1 GB memory** (set in `fly.toml`) — parsing the ~70 MB
   map read-only peaks well above the 256 MB default.
 - **Deploy with `--ha=false` (single machine).** Fly's default first deploy

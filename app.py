@@ -49,10 +49,11 @@ def parse_users(raw: str) -> dict[str, str]:
         if not pair:
             continue
         name, sep, password = pair.partition(":")
-        if not sep or not name.strip() or not password:
+        name, password = name.strip(), password.strip()
+        if not sep or not name or not password:
             log.warning("ignoring malformed APP_USERS entry %r…", pair[:12])
             continue
-        users[name.strip()] = password
+        users[name] = password
     return users
 
 
@@ -326,10 +327,15 @@ def create_app(data_dir: Path | str | None = None,
                             user_password.encode("utf-8"))):
                     g.user = name  # canonical casing from the config
                     return None
-            if password and hmac.compare_digest(
-                    auth.password.encode("utf-8"),
-                    password.encode("utf-8")):
-                g.user = typed  # shared-password fallback: name as typed
+            # Shared-password fallback: any name EXCEPT a configured user's
+            # — otherwise the shared password could sign someone in AS a
+            # named colleague and forge the run history.
+            if (password
+                    and typed.lower() not in (n.lower() for n in users)
+                    and hmac.compare_digest(
+                        auth.password.encode("utf-8"),
+                        password.encode("utf-8"))):
+                g.user = typed  # name as typed
                 return None
         return Response(
             "Authentication required.", 401,
@@ -390,18 +396,25 @@ def create_app(data_dir: Path | str | None = None,
                 remembered, unknown = column_memory.lookup(previews,
                                                            memory_path)
                 detection = list(remembered)
-                if unknown and sku_locator.is_configured():
-                    fresh = sku_locator.locate_from_previews(unknown)
-                    fresh = [e for e in fresh if e.get("sku_columns")]
-                    column_memory.attach_fingerprints(fresh, previews)
-                    detection += fresh
                 ai["enabled"] = (sku_locator.is_configured()
                                  or bool(remembered))
-                ai["detection"] = detection
-                ai["samples"] = sku_locator.column_samples(previews, detection)
                 if remembered:
                     log.info("column memory: %d sheet(s) pre-approved",
                              len(remembered))
+                if unknown and sku_locator.is_configured():
+                    # An API failure only costs the run fresh detection —
+                    # sheets served from memory must keep working.
+                    try:
+                        fresh = sku_locator.locate_from_previews(unknown)
+                        fresh = [e for e in fresh if e.get("sku_columns")]
+                        column_memory.attach_fingerprints(fresh, previews)
+                        detection += fresh
+                    except Exception as exc:
+                        log.warning("SKU column detection unavailable: %s",
+                                    exc)
+                        ai["note"] = str(exc)
+                ai["detection"] = detection or None
+                ai["samples"] = sku_locator.column_samples(previews, detection)
             except Exception as exc:
                 log.warning("SKU column detection unavailable: %s", exc)
                 ai["enabled"] = True

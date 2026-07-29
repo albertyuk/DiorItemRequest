@@ -13,6 +13,9 @@
     {% endif %}
   </div>
 
+  {% if ai.get('note') %}
+    <div class="warn">{{ t('ai_failed', detail=ai.get('note') | e) | safe }}</div>
+  {% endif %}
   {% if ai.get('detection') %}
     <div class="card">
       <h3>{{ t('ai_heading') }}</h3>
@@ -42,8 +45,6 @@
         {% endfor %}
       </table>
     </div>
-  {% elif ai.get('note') %}
-    <div class="warn">{{ t('ai_failed', detail=ai.get('note') | e) | safe }}</div>
   {% endif %}
 
   <form method="post" id="skuform"

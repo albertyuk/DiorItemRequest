@@ -70,6 +70,9 @@
 
   <h3>{{ t('ai_heading') }}</h3>
   <p class="muted">{{ t('ai_desc') }}</p>
+  {% if report.ai_note %}
+    <div class="warn">{{ t('ai_failed', detail=report.ai_note | e) | safe }}</div>
+  {% endif %}
   {% if report.ai_detection %}
     {% if report.ai_confirmed %}
       <p class="muted">{{ t('ai_confirmed_note') | safe }}</p>
@@ -106,14 +109,14 @@
         </details>
       {% endif %}
     {% endfor %}
-  {% elif report.ai_note %}
-    <div class="warn">{{ t('ai_failed', detail=report.ai_note | e) | safe }}</div>
-  {% elif report.ai_enabled and report.ai_confirmed %}
-    <p class="muted">{{ t('ai_all_deselected') }}</p>
-  {% elif report.ai_enabled %}
-    <p class="muted">{{ t('ai_none') }}</p>
-  {% else %}
-    <p class="muted">{{ t('ai_off') }}</p>
+  {% elif not report.ai_note %}
+    {% if report.ai_enabled and report.ai_confirmed %}
+      <p class="muted">{{ t('ai_all_deselected') }}</p>
+    {% elif report.ai_enabled %}
+      <p class="muted">{{ t('ai_none') }}</p>
+    {% else %}
+      <p class="muted">{{ t('ai_off') }}</p>
+    {% endif %}
   {% endif %}
 
   <h3>{{ t('step2_title') }}</h3>
