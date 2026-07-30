@@ -1070,6 +1070,15 @@ def test_help_page_in_both_languages(tmp_path):
     assert "第一次使用" in zh
     assert "筛选" in zh
 
+    # picture examples: each language embeds its own screenshots, and the
+    # images actually serve
+    for name in ("upload_en", "review_en", "report_en", "pickup_excel"):
+        assert f"img/help/{name}.png" in en
+    for name in ("upload_zh", "review_zh", "report_zh", "pickup_excel"):
+        assert f"img/help/{name}.png" in zh
+    r = client.get("/static/img/help/pickup_excel.png")
+    assert r.status_code == 200 and r.data[:8] == b"\x89PNG\r\n\x1a\n"
+
     # help is behind auth like everything else
     locked = create_app(data_dir=tmp_path / "locked", setup_code="pw",
                         cookie_secure=False)

@@ -51,6 +51,14 @@
     <li>生成后进入<strong>运行报告</strong>页，点下载按钮获取
         ProductsList 工作簿。报告页有独立网址，可以刷新、收藏，之后随时回看。</li>
   </ol>
+  <figure class="shot">
+    <a href="{{ url_for('static', filename='img/help/upload_zh.png') }}"
+       target="_blank"><img loading="lazy" alt="首页截图"
+       src="{{ url_for('static', filename='img/help/upload_zh.png') }}"></a>
+    <figcaption>首页：绿色提示框显示当前保存的库存查询表；两个文件框分别选
+      Sell-Thru Map 和库存查询表；下方“最近的运行”可随时重新下载最近 10
+      次的结果。（点击图片可放大）</figcaption>
+  </figure>
 
   <h2>确认页说明</h2>
   <p>在你点击生成按钮之前，不会写入任何文件 — 最终结果由这一页决定。
@@ -70,6 +78,14 @@
     <li>之前确认错了怎么办？把那个工作表的款号<strong>全部</strong>取消勾选
         后生成，工具就会忘记这张表“已记住”的列，下次重新交给 AI 识别。</li>
   </ul>
+  <figure class="shot">
+    <a href="{{ url_for('static', filename='img/help/review_zh.png') }}"
+       target="_blank"><img loading="lazy" alt="确认页截图"
+       src="{{ url_for('static', filename='img/help/review_zh.png') }}"></a>
+    <figcaption>确认页示例：Delivery 表按 PickUp 列提取（带绿色 PickUp
+      标记），黄色警示框提醒有 1 个无法识别的值和 1 个标黄未标记的款号；
+      “无库存”标记表示库存查询表中没有匹配记录；底部生成按钮实时显示行数。</figcaption>
+  </figure>
 
   <h2>如何阅读运行报告？</h2>
   <p>报告分四个步骤，展示工具每一步做了什么，都可以点开逐项核对：</p>
@@ -84,6 +100,13 @@
   </ol>
   <p>报告顶部会注明是谁上传的、谁确认生成的；如果确认时排除过款号，
   也会在“确认时排除的款号”下逐一列出。</p>
+  <figure class="shot">
+    <a href="{{ url_for('static', filename='img/help/report_zh.png') }}"
+       target="_blank"><img loading="lazy" alt="运行报告截图"
+       src="{{ url_for('static', filename='img/help/report_zh.png') }}"></a>
+    <figcaption>运行报告示例：顶部是结果摘要和黑色下载按钮，下方按步骤展示
+      每个环节的明细，包括 PickUp 列的提取情况和各类需人工留意的清单。</figcaption>
+  </figure>
   <p>报告底部还有两个清单，需要留意：</p>
   <ul class="compact">
     <li><strong>未匹配的基础款号</strong>：标黄了，但库存查询表里查不到。
@@ -109,6 +132,14 @@
   这张表上的标黄仅作参考 — 报告会单独列出“标黄但未标记”的款号供你核对。
   没有 PickUp 列的工作表仍按标黄提取，所以每季的 Sell-Thru Map
   不需要做任何改动。</p>
+  <figure class="shot narrow">
+    <a href="{{ url_for('static', filename='img/help/pickup_excel.png') }}"
+       target="_blank"><img loading="lazy" alt="PickUp 列示例"
+       src="{{ url_for('static', filename='img/help/pickup_excel.png') }}"></a>
+    <figcaption>Excel 中的样子：B 列表头为 PickUp；第 2、4 行标了 Y，会被
+      提取；第 5 行只标黄没有标 Y，<strong>不会</strong>被提取（报告会列出
+      提醒你）；第 6 行的 “maybe?” 无法识别，同样不会被提取。</figcaption>
+  </figure>
 
   <h2>什么样的才算“标黄”？（重要）</h2>
   <p>两种黄色都算：Sell-Thru Map 原本使用的<strong>浅黄</strong>
@@ -199,6 +230,15 @@
         get the ProductsList workbook. The report page is a real URL —
         refresh it, bookmark it, or come back to it later.</li>
   </ol>
+  <figure class="shot">
+    <a href="{{ url_for('static', filename='img/help/upload_en.png') }}"
+       target="_blank"><img loading="lazy" alt="Home page screenshot"
+       src="{{ url_for('static', filename='img/help/upload_en.png') }}"></a>
+    <figcaption>The home page: the green notice shows the stored stock
+      query, the two file fields take the Sell-Thru Map and (optionally) a
+      new query export, and Recent runs below keeps the last 10 results
+      downloadable. (Click any picture to enlarge.)</figcaption>
+  </figure>
 
   <h2>The review page, explained</h2>
   <p>Nothing is written until you press the build button — this page
@@ -223,6 +263,16 @@
         SKU of that sheet and build — the tool forgets that sheet's
         remembered columns and will ask the AI afresh next time.</li>
   </ul>
+  <figure class="shot">
+    <a href="{{ url_for('static', filename='img/help/review_en.png') }}"
+       target="_blank"><img loading="lazy" alt="Review page screenshot"
+       src="{{ url_for('static', filename='img/help/review_en.png') }}"></a>
+    <figcaption>A review page in action: the Delivery sheet is selected by
+      its PickUp column (green PickUp badges), the yellow box warns about
+      one unrecognized value and one highlighted-but-unmarked SKU, "no
+      stock" flags a SKU with no stock rows, and the build button shows
+      the exact row count.</figcaption>
+  </figure>
 
   <h2>How to read the run report</h2>
   <p>The report shows the work as four steps, each expandable for checking:</p>
@@ -241,6 +291,14 @@
   <p>The top of the report names who uploaded the map and who reviewed &amp;
   built the run; if any SKUs were unticked at review, they are listed under
   "Excluded at review".</p>
+  <figure class="shot">
+    <a href="{{ url_for('static', filename='img/help/report_en.png') }}"
+       target="_blank"><img loading="lazy" alt="Run report screenshot"
+       src="{{ url_for('static', filename='img/help/report_en.png') }}"></a>
+    <figcaption>A run report: the summary and black download button on
+      top, then every processing step in detail — including the PickUp
+      section and the check-lists that need a human eye.</figcaption>
+  </figure>
   <p>Two lists at the bottom deserve attention:</p>
   <ul class="compact">
     <li><strong>Unmatched bases</strong> — highlighted, but not found in the
@@ -271,6 +329,16 @@
   separately lists "highlighted but not marked" SKUs for you to check.
   Sheets without a PickUp column keep the yellow-highlight behavior, so
   the seasonal Sell-Thru Map needs no changes at all.</p>
+  <figure class="shot narrow">
+    <a href="{{ url_for('static', filename='img/help/pickup_excel.png') }}"
+       target="_blank"><img loading="lazy" alt="PickUp column example"
+       src="{{ url_for('static', filename='img/help/pickup_excel.png') }}"></a>
+    <figcaption>How it looks in Excel: column B is headed PickUp; rows 2
+      and 4 are marked Y and will be extracted; row 5 is only highlighted,
+      not marked, so it is <strong>not</strong> extracted (the report
+      lists it for you); row 6's "maybe?" is unrecognized and also not
+      extracted.</figcaption>
+  </figure>
 
   <h2>What counts as "highlighted"? (important)</h2>
   <p>Both yellows count: the map's native <strong>pale yellow</strong>
