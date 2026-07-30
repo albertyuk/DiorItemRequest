@@ -5,13 +5,27 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ t('site_title') }} — {% block title %}{% endblock %}</title>
   <style>
+    /* Playfair Display (SIL OFL, see /static/fonts/OFL.txt) — one Didone
+       for every OS, so the wordmark and titles render identically. */
+    @font-face {
+      font-family: "Playfair Display";
+      src: url("/static/fonts/playfair-latin.woff2") format("woff2");
+      font-weight: 400 700; font-style: normal; font-display: swap;
+      unicode-range: U+0000-00FF, U+2013-2014, U+2018-201D, U+2026;
+    }
+    @font-face {
+      font-family: "Playfair Display";
+      src: url("/static/fonts/playfair-italic-latin.woff2") format("woff2");
+      font-weight: 400 700; font-style: italic; font-display: swap;
+      unicode-range: U+0000-00FF, U+2013-2014, U+2018-201D, U+2026;
+    }
     :root {
       --ink: #1a1a1a;
       --muted: #757575;
       --hair: #e4e4e4;
       --hair-dark: #cfcfcf;   /* decorative rules only */
       --control: #8f8f8f;     /* interactive-component borders (>=3:1) */
-      --serif: "Didot", "Bodoni MT", Georgia, "Playfair Display",
+      --serif: "Playfair Display", "Didot", "Bodoni MT", Georgia,
                "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC",
                "Noto Serif SC", "SimSun", serif;
       --sans: "Helvetica Neue", Helvetica, Arial, "PingFang SC",
@@ -20,38 +34,49 @@
     * { box-sizing: border-box; }
     body { margin: 0; font-family: var(--sans); background: #fff;
            color: var(--ink); line-height: 1.65; font-size: 15px;
-           -webkit-font-smoothing: antialiased; }
+           -webkit-font-smoothing: antialiased;
+           display: flex; flex-direction: column; min-height: 100vh; }
     a { color: var(--ink); text-decoration: underline;
         text-decoration-thickness: 1px; text-underline-offset: 3px; }
     a:hover { opacity: .6; }
     /* dynamic values (filenames, usernames) inside uppercased chrome */
     .data { text-transform: none; letter-spacing: .04em; }
 
+    /* dior.com-style header: centered wordmark, nav row beneath */
     header.top { background: #fff; border-bottom: 1px solid var(--ink); }
-    header.top .wrap { display: flex; justify-content: space-between;
-                       align-items: baseline; padding-top: 1.15rem;
-                       padding-bottom: 1.05rem; gap: 1rem; }
+    header.top .wrap { display: flex; flex-direction: column;
+                       align-items: center; gap: .6rem;
+                       padding-top: 1.7rem; padding-bottom: 1.05rem; }
     .wrap { max-width: 56rem; margin: 0 auto; padding-left: 1.2rem;
             padding-right: 1.2rem; }
-    .brand { font-family: var(--serif); font-weight: 400;
-             text-transform: uppercase; letter-spacing: .24em;
-             font-size: 1.05rem; text-decoration: none; color: var(--ink);
-             white-space: nowrap; }
+    .brand { font-family: var(--serif); font-weight: 500;
+             text-transform: uppercase; letter-spacing: .38em;
+             text-indent: .38em; /* recenter: tracking pads the right edge */
+             font-size: 1.5rem; text-decoration: none; color: var(--ink);
+             white-space: nowrap; text-align: center; }
     .brand:hover { opacity: 1; }
-    header.top nav { white-space: nowrap; }
-    header.top nav a { margin-left: 1.3rem; text-decoration: none;
+    header.top nav { text-align: center; }
+    header.top nav a { margin: 0 .8rem; text-decoration: none;
                        color: var(--ink); font-size: .68rem;
-                       letter-spacing: .18em; text-transform: uppercase; }
+                       letter-spacing: .18em; text-transform: uppercase;
+                       line-height: 2.2; }
     header.top nav a:hover { opacity: 1; text-decoration: underline;
                              text-underline-offset: 4px; }
     header.top nav a.lang { border: 1px solid var(--ink);
                             padding: .3rem .75rem; background: #fff; }
     header.top nav a.lang:hover { background: var(--ink); color: #fff;
                                   text-decoration: none; }
-    main.wrap { padding-top: 2.2rem; padding-bottom: 4rem; }
+    main.wrap { padding-top: 2.6rem; padding-bottom: 4rem; flex: 1;
+                width: 100%; }
+
+    footer.foot { background: var(--ink); color: #fff; }
+    footer.foot .wrap { text-align: center; padding-top: 1.7rem;
+                        padding-bottom: 1.7rem; font-family: var(--serif);
+                        text-transform: uppercase; letter-spacing: .34em;
+                        text-indent: .34em; font-size: .78rem; }
 
     .steps { list-style: none; display: flex; gap: 0; padding: 0;
-             margin: 0 0 2.2rem; counter-reset: s;
+             margin: 0 0 2.4rem; counter-reset: s;
              border-bottom: 1px solid var(--hair); }
     .steps li { counter-increment: s; flex: 1; text-align: center;
                 font-size: .66rem; letter-spacing: .18em;
@@ -65,11 +90,16 @@
     .steps li.now { border-color: var(--ink); color: var(--ink); }
 
     .card { background: #fff; border: 1px solid var(--hair);
-            padding: 1.6rem 1.8rem; margin: 0 0 1.4rem; }
-    h2 { font-family: var(--serif); font-weight: 500; font-size: 1.35rem;
-         letter-spacing: .03em; margin: 1.9rem 0 .8rem; }
-    h3 { font-family: var(--serif); font-weight: 500; font-size: 1.08rem;
-         letter-spacing: .03em; margin: 1.6rem 0 .5rem; }
+            padding: 1.9rem 2.1rem; margin: 0 0 1.5rem; }
+    .auth-card { border: 0; padding-top: 2.4rem; }
+    .auth-card h2 { text-align: center; }
+    .auth-card form.run input:not([type="checkbox"]) { max-width: 100%; }
+    .auth-card button[type="submit"] { width: 100%; }
+    h2 { font-family: var(--serif); font-weight: 500; font-size: 1.02rem;
+         text-transform: uppercase; letter-spacing: .22em;
+         margin: 2.1rem 0 .9rem; }
+    h3 { font-family: var(--serif); font-style: italic; font-weight: 500;
+         font-size: 1.05rem; letter-spacing: .02em; margin: 1.7rem 0 .5rem; }
     main > h2:first-child, .card > h2:first-child,
     .card > h3:first-child { margin-top: .1rem; }
 
@@ -106,7 +136,7 @@
              border: 1px solid var(--ink); border-radius: 0;
              font-family: var(--sans); font-size: .7rem;
              letter-spacing: .18em; text-transform: uppercase;
-             padding: .75rem 1.7rem; cursor: pointer;
+             padding: .78rem 1.8rem; cursor: pointer;
              text-decoration: none; display: inline-block; }
     button:hover, a.button:hover { background: #fff; color: var(--ink);
                                    opacity: 1; }
@@ -123,17 +153,19 @@
                flex-wrap: wrap; margin: .6rem 0 .8rem; }
     .toolbar .spacer { flex: 1; }
 
-    form.run label { display: block; margin: 1.15rem 0 .3rem;
+    form.run label { display: block; margin: 1.3rem 0 .15rem;
                      font-size: .66rem; font-weight: 500;
                      letter-spacing: .16em; text-transform: uppercase;
                      color: var(--ink); }
+    /* dior.com-style underline fields */
     form.run input:not([type="file"]):not([type="checkbox"]) {
-      width: 100%; max-width: 24rem; padding: .55rem .7rem;
-      border: 1px solid var(--control); border-radius: 0;
-      font-size: .92rem; font-family: var(--sans); background: #fff;
+      width: 100%; max-width: 24rem; padding: .5rem .05rem;
+      border: 0; border-bottom: 1px solid var(--control); border-radius: 0;
+      font-size: .95rem; font-family: var(--sans); background: transparent;
       color: var(--ink); }
-    form.run input:focus { outline: none; border-color: var(--ink); }
-    form.run input[type="file"] { font-size: .85rem; }
+    form.run input:focus { outline: none; border-bottom-color: var(--ink);
+                           box-shadow: 0 1px 0 var(--ink); }
+    form.run input[type="file"] { font-size: .85rem; margin-top: .35rem; }
     form.run input[type="file"]::file-selector-button {
       background: #fff; color: var(--ink);
       border: 1px solid var(--control); border-radius: 0;
@@ -159,8 +191,13 @@
     ul.compact { margin: .4rem 0; padding-left: 1.3rem; }
     ol.tut li { margin: .5rem 0; }
 
-    /* CJK has no uppercase: the Latin micro-label sizes and tracking read
-       as undersized, muddy Chinese — bump size, ease tracking. */
+    /* CJK has no uppercase or italics: bump micro-text sizes, ease the
+       tracking, and keep zh headings upright. */
+    html[lang="zh-CN"] .brand { letter-spacing: .3em; text-indent: .3em; }
+    html[lang="zh-CN"] footer.foot .wrap { letter-spacing: .3em;
+                                           text-indent: .3em; }
+    html[lang="zh-CN"] h2 { font-size: 1.2rem; letter-spacing: .14em; }
+    html[lang="zh-CN"] h3 { font-style: normal; letter-spacing: .06em; }
     html[lang="zh-CN"] header.top nav a { font-size: .76rem;
                                           letter-spacing: .1em; }
     html[lang="zh-CN"] .steps li { font-size: .74rem; letter-spacing: .1em; }
@@ -180,10 +217,10 @@
   {% set other_lang = 'zh' if lang == 'en' else 'en' %}
   {% set lang_target = (request.path if request.method == 'GET'
                         else url_for('index')) ~ '?lang=' ~ other_lang %}
+  {% set brand = t('site_title').split('—')[0].strip() %}
   <header class="top">
     <div class="wrap">
-      <a class="brand" href="{{ url_for('index') }}">{{
-        t('site_title').split('—')[0].strip() }}</a>
+      <a class="brand" href="{{ url_for('index') }}">{{ brand }}</a>
       <nav>
         <a href="{{ url_for('index') }}">{{ t('nav_home') }}</a>
         <a href="{{ url_for('help_page') }}">{{ t('nav_help') }}</a>
@@ -206,5 +243,8 @@
     {% endif %}
     {% block content %}{% endblock %}
   </main>
+  <footer class="foot">
+    <div class="wrap">{{ brand }}</div>
+  </footer>
 </body>
 </html>

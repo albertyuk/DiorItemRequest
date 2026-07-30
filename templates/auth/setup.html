@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ t('auth_setup_title') }}{% endblock %}
 {% block content %}
-  <div class="card" style="max-width:28rem;margin:0 auto">
+  <div class="card auth-card" style="max-width:28rem;margin:0 auto">
     <h2>{{ t('auth_setup_title') }}</h2>
     <p class="muted">{{ t('auth_setup_hint') }}</p>
     {% if error %}<div class="error">{{ error }}</div>{% endif %}
