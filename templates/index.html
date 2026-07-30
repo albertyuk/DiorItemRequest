@@ -4,7 +4,7 @@
 {% block content %}
   <div class="card">
     <h2>{{ t('page_upload_heading') }}</h2>
-    <p class="muted">{{ t('intro') }}
+    <p class="muted">{{ t('intro') | safe }}
       <a href="{{ url_for('help_page') }}">{{ t('help_link') }}</a></p>
 
     {% if query_meta %}

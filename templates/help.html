@@ -93,6 +93,23 @@
         工具不会提取它们，列出来是方便人工确认有没有漏标。</li>
   </ul>
 
+  <h2>PickUp 列：显式指定要补货的行</h2>
+  <p>除了标黄，还可以用一个 <strong>PickUp 列</strong>明确指定要提取的行 —
+  完全绕开颜色识别的各种坑（浅黄看不清、被筛选隐藏等）。用法：</p>
+  <ol class="tut">
+    <li>在工作表里新建一列，表头写 <code>PickUp</code>
+        （大小写、空格、连字符不影响：pickup / Pick Up / PICK-UP 都可以；
+        表头需出现在前 15 行内）。</li>
+    <li>在需要补货的行，该列填 <code>Y</code>
+        （也接受 yes、x、1、pickup、是，大小写均可）。</li>
+    <li>保存后照常上传。</li>
+  </ol>
+  <p><strong>规则：</strong>只要工作表有 PickUp 列，这张表就<strong>只按
+  该列</strong>提取：该列填了其他内容的行不会被选中（报告会列出无法识别的值），
+  这张表上的标黄仅作参考 — 报告会单独列出“标黄但未标记”的款号供你核对。
+  没有 PickUp 列的工作表仍按标黄提取，所以每季的 Sell-Thru Map
+  不需要做任何改动。</p>
+
   <h2>什么样的才算“标黄”？（重要）</h2>
   <p>两种黄色都算：Sell-Thru Map 原本使用的<strong>浅黄</strong>
   <span class="sw" style="background:#FFF2CC"></span>（颜色很淡，
@@ -234,6 +251,26 @@
         non-yellow fills. The tool does not extract them, but lists them so a
         human can confirm nothing was mis-marked.</li>
   </ul>
+
+  <h2>The PickUp column: marking rows explicitly</h2>
+  <p>Besides highlighting, you can select rows explicitly with a
+  <strong>PickUp column</strong> — sidestepping every color-detection
+  pitfall (invisible pale yellows, filter-hidden rows). How to use it:</p>
+  <ol class="tut">
+    <li>Add a column to the sheet with the header <code>PickUp</code>
+        (case, spaces and dashes don't matter: pickup / Pick Up / PICK-UP
+        all work; the header must sit in the first 15 rows).</li>
+    <li>On every row you want to order, type <code>Y</code> in that
+        column (also accepted: yes, x, 1, pickup, 是 — any casing).</li>
+    <li>Save and upload as usual.</li>
+  </ol>
+  <p><strong>The rule:</strong> when a sheet has a PickUp column, that
+  sheet is selected <strong>only</strong> by it: rows with anything else
+  in the column are not selected (unrecognized values are listed on the
+  report), and highlights on that sheet are reference-only — the report
+  separately lists "highlighted but not marked" SKUs for you to check.
+  Sheets without a PickUp column keep the yellow-highlight behavior, so
+  the seasonal Sell-Thru Map needs no changes at all.</p>
 
   <h2>What counts as "highlighted"? (important)</h2>
   <p>Both yellows count: the map's native <strong>pale yellow</strong>

@@ -11,6 +11,19 @@
                            rows="{:,}".format(query_info.rows),
                            time=query_info.uploaded_at | e) | safe }}</p>
     {% endif %}
+    {% for s in sheets %}
+      {% if s.marker_column %}
+        <p class="muted">{{ t('review_pickup_note', sheet=s.name,
+                              col=s.marker_column, n=s.marked_rows) }}</p>
+        {% if s.marker_unrecognized or s.marker_no_sku_rows
+              or s.highlighted_unmarked %}
+          <div class="warn">{{ t('review_pickup_warn', sheet=s.name,
+                bad=s.marker_unrecognized | length,
+                nosku=s.marker_no_sku_rows | length,
+                unmarked=s.highlighted_unmarked | length) }}</div>
+        {% endif %}
+      {% endif %}
+    {% endfor %}
   </div>
 
   {% if ai.get('note') %}
@@ -66,6 +79,9 @@
             <td><input type="checkbox" name="sku" value="{{ e.base }}" checked
                        data-rows="{{ e.rows }}" aria-label="{{ e.base }}"></td>
             <td><strong>{{ e.base }}</strong>
+                {% if 'pickup' in e.sources %}
+                  <span class="badge badge-ok">{{ t('badge_pickup') }}</span>
+                {% endif %}
                 {% if 'ai' in e.sources %}
                   <span class="badge badge-ai">{{ t('badge_ai') }}</span>
                 {% endif %}</td>

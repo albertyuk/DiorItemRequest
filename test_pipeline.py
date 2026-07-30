@@ -412,6 +412,119 @@ def test_review_skipped_when_nothing_found(tmp_path, monkeypatch, detection):
     assert "unticked" not in html
 
 
+def _marker_workbook(path, header="PickUp"):
+    """One sheet with a PickUp column: marked, highlighted-only,
+    unrecognized-value, and marked-but-empty rows."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Mark"
+    ws["A1"] = "SKU"
+    ws["B1"] = header
+    ws["C1"] = "Qty"
+    ws["A2"] = "644S16B7E72X5805"          # marked -> selected
+    ws["B2"] = "Y"
+    ws["A3"] = "641V19A1491X8300"          # highlighted only -> NOT selected
+    ws["A3"].fill = PatternFill("solid", fgColor="FFFF00")
+    ws["A4"] = "652P92X3F74X8090"           # marked via variant -> selected
+    ws["B4"] = "yes"
+    ws["A5"] = "657H91A1234X5678"           # unrecognized value -> ignored
+    ws["B5"] = "maybe?"
+    ws["B6"] = "Y"                          # marked row without any SKU
+    wb.save(path)
+
+
+@pytest.mark.parametrize("header", ["PickUp", "pick up", "PICK-UP"])
+def test_pickup_column_is_primary_selector(tmp_path, header):
+    path = tmp_path / "mark.xlsx"
+    _marker_workbook(path, header=header)
+    scan = pipeline.scan_sell_thru_map(path)
+    s = scan.sheets[0]
+    assert s.uses_marker and s.marker_column == "B"
+    assert s.marker_header_row == 1
+    assert s.marked_rows == 3                       # Y, yes, and the empty row
+    # marked rows select; the highlight alone does NOT
+    assert s.marked_skus == {"644S16B7E72X5805", "652P92X3F74X8090"}
+    assert s.bases == {"644S16B7E72", "652P92X3F74"}
+    # the highlighted-but-unmarked SKU is surfaced, not silently dropped
+    assert s.highlighted_unmarked == ["641V19A1491X8300"]
+    # anomalies are recorded for the human
+    assert s.marker_unrecognized == [("B5", "maybe?")]
+    assert s.marker_no_sku_rows == ["B6"]
+    # sheet-level union still works via MapScan
+    assert set(scan.bases) == {"644S16B7E72", "652P92X3F74"}
+
+
+def test_pickup_marks_ai_located_skus(tmp_path):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Track"
+    ws["A1"] = "TS SKU"
+    ws["B1"] = "PickUp"
+    ws["A2"] = "M0759OWKAM912"              # non-standard format, marked
+    ws["B2"] = "Y"
+    ws["A3"] = "KCK554TFS_S03W"             # non-standard, unmarked
+    path = tmp_path / "track.xlsx"
+    wb.save(path)
+    ai_columns = {"Track": {"header_row": 1, "columns": {"A": "TS SKU"}}}
+    scan = pipeline.scan_sell_thru_map(path, ai_columns=ai_columns)
+    s = scan.sheets[0]
+    assert s.marked_skus == {"M0759OWKAM912"}
+    assert s.bases == {"M0759OWKAM912"}
+    # recorded in the AI trace so column memory still sees the approval
+    assert [d[1] for d in s.ai_highlighted_cell_details] == ["M0759OWKAM912"]
+
+
+def test_pickup_and_highlight_sheets_mix(tmp_path):
+    """A PickUp sheet and a highlight-only sheet in one workbook: each
+    sheet keeps its own selection rule and the bases union."""
+    path = tmp_path / "mixed.xlsx"
+    _marker_workbook(path)
+    wb = load_workbook(path)
+    ws = wb.create_sheet("Plain")
+    ws["A1"] = "SKU"
+    ws["A2"] = "641V19A1491X8300"
+    ws["A2"].fill = PatternFill("solid", fgColor="FFFF00")
+    wb.save(path)
+    scan = pipeline.scan_sell_thru_map(path)
+    assert set(scan.bases) == {"644S16B7E72", "652P92X3F74", "641V19A1491"}
+    assert scan.bases["641V19A1491"] == ["Plain"]   # not from the Mark sheet
+
+
+def test_pickup_e2e_review_badge_and_report(tmp_path):
+    """Upload -> review shows the PickUp badge and warnings -> report
+    documents the marker column and its anomalies."""
+    app = create_app(data_dir=tmp_path / "data", open_access=True)
+    client = app.test_client()
+    map_path = tmp_path / "mark.xlsx"
+    _marker_workbook(map_path)
+    qwb = Workbook()
+    qws = qwb.active
+    qws.title = "query"
+    qws.append(pipeline.QUERY_HEADERS)
+    qws.append(["361723", "644S16B7E72 - X5805 - T36", "d", "dep", "s",
+                None, None, None, 1, 10, 20, "t", "p"])
+    query_path = tmp_path / "q.xlsx"
+    qwb.save(query_path)
+
+    data, _ = _finish_job(client, _upload(client, map_path, query_path))
+    assert "/review/" in data["next"]
+    html = client.get(data["next"]).data.decode()
+    assert "badge-ok" in html and "PickUp" in html      # source badge
+    skus = re.findall(r'name="sku" value="([^"]+)"', html)
+    assert set(skus) == {"644S16B7E72", "652P92X3F74"}
+    assert "641V19A1491" not in html                    # highlight ignored
+    # the anomaly warning names all three counts
+    assert "unrecognized PickUp value" in html
+
+    build = re.search(r'action="(/review/[0-9_a-f]+/build)"', html).group(1)
+    resp = client.post(build, data={"sku": skus}, follow_redirects=True)
+    report = resp.data.decode()
+    assert "PickUp column (explicit selection)" in report
+    assert "maybe?" in report                           # unrecognized listed
+    assert "B6" in report                               # no-SKU row listed
+    assert "641V19A1491X8300" in report                # unmarked highlight
+
+
 def test_column_memory_fingerprint_and_lookup(tmp_path):
     cells = {"A": " Capsule ", "B": "TS  SKU", "C": "Qty"}
     fp = column_memory.fingerprint_row(cells)

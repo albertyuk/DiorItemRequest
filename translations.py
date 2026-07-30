@@ -29,11 +29,13 @@ STRINGS = {
         "lang_switch": "中文",
 
         # index
-        "intro": ("Extracts yellow-highlighted (reorder) SKUs from a sell-thru "
-                  "map, looks up all color/size variants in the stored stock "
-                  "query export, and produces a filled ProductsList workbook. "
-                  "Nothing is written until you approve the result on the "
-                  "review page."),
+        "intro": ("Extracts the reorder SKUs from a sell-thru map — rows "
+                  "marked <code>Y</code> in a <code>PickUp</code> column "
+                  "when a sheet has one, yellow-highlighted cells otherwise "
+                  "— looks up all color/size variants in the stored stock "
+                  "query export, and produces a filled ProductsList "
+                  "workbook. Nothing is written until you approve the "
+                  "result on the review page."),
         "stored_query": ("Stored stock query: <strong>{name}</strong> "
                          "&mdash; {rows} rows, uploaded {time}."),
         "no_query_warning": ("<strong>No stock query export stored yet.</strong> "
@@ -114,6 +116,42 @@ STRINGS = {
         "query_used": ("Stock query used: <strong>{name}</strong> — {rows} "
                        "rows, uploaded {time}."),
         "th_source": "Source", "src_ai": "AI", "src_memory": "remembered",
+        "badge_pickup": "PickUp",
+        "th_value": "Value",
+        "review_pickup_note": ("Sheet {sheet}: selection comes from its "
+                               "PickUp column ({col}) — {n} marked row(s); "
+                               "highlights on this sheet do not select."),
+        "review_pickup_warn": ("{sheet}: {bad} unrecognized PickUp "
+                               "value(s) were ignored, {nosku} marked "
+                               "row(s) held no SKU, and {unmarked} "
+                               "highlighted SKU(s) are not marked and are "
+                               "therefore NOT selected — details go on the "
+                               "run report."),
+        "pickup_heading": "PickUp column (explicit selection)",
+        "pickup_desc": ("When a sheet has a column headed "
+                        "<code>PickUp</code>, that column is the sheet's "
+                        "selector: rows marked <code>Y</code> (also "
+                        "accepted: yes / x / 1 / pickup / 是) are "
+                        "extracted, and highlights there are reported for "
+                        "reference only. Sheets without the column keep "
+                        "the yellow-highlight behavior."),
+        "pickup_sheet_line": ("{sheet}: PickUp column <strong>{col}</strong> "
+                              "(header on row {row}) — <strong>{n}</strong> "
+                              "marked row(s)."),
+        "pickup_details_summary": "{sheet} — the {n} SKUs picked up",
+        "pickup_unrecognized_note": ("{n} value(s) in the PickUp column "
+                                     "were not recognized and did NOT "
+                                     "select their row (only Y / yes / x / "
+                                     "1 / pickup / 是 count):"),
+        "pickup_no_sku_note": ("{n} marked row(s) contained no "
+                               "recognizable SKU:"),
+        "pickup_unmarked_note": ("{n} highlighted SKU(s) on this sheet are "
+                                 "NOT marked in the PickUp column and were "
+                                 "NOT selected — mark them with Y and "
+                                 "re-run if they should be ordered:"),
+        "pickup_none": ("No PickUp column on any sheet — SKUs were "
+                        "selected by yellow highlight (the standard "
+                        "behavior)."),
         "review_memory_note": ("Columns marked “remembered” were approved by "
                                "a reviewer on an earlier run, so they needed "
                                "no AI call this time. To make the tool "
@@ -344,9 +382,10 @@ STRINGS = {
         "lang_switch": "English",
 
         # index
-        "intro": ("自动从 Sell-Thru Map（销售进度表）中提取所有标黄（需补货）的 SKU，"
-                  "在已保存的库存查询表中匹配出全部颜色和尺码，"
-                  "并生成可直接使用的 ProductsList 工作簿。"
+        "intro": ("自动从 Sell-Thru Map（销售进度表）中提取需补货的 SKU —— "
+                  "工作表如有 <code>PickUp</code> 列，则以标 <code>Y</code> "
+                  "的行为准；否则按标黄单元格提取。随后在已保存的库存查询表中"
+                  "匹配出全部颜色和尺码，生成可直接使用的 ProductsList 工作簿。"
                   "生成前会先进入确认页，经你核对确认后才会写入文件。"),
         "stored_query": ("当前保存的库存查询表：<strong>{name}</strong>，"
                          "共 {rows} 行，上传于 {time}。"),
@@ -417,6 +456,32 @@ STRINGS = {
         "query_used": ("使用的库存查询表：<strong>{name}</strong>，"
                        "共 {rows} 行，上传于 {time}。"),
         "th_source": "来源", "src_ai": "AI", "src_memory": "已记住",
+        "badge_pickup": "PickUp",
+        "th_value": "内容",
+        "review_pickup_note": ("工作表 {sheet}：以其 PickUp 列（{col} 列）为准 — "
+                               "共标记 {n} 行；该表的标黄不再用于选择。"),
+        "review_pickup_warn": ("{sheet}：{bad} 个 PickUp 值无法识别（已忽略），"
+                               "{nosku} 个已标记的行没有 SKU，"
+                               "{unmarked} 个标黄 SKU 未标记（因此未被选择）— "
+                               "详情见生成后的运行报告。"),
+        "pickup_heading": "PickUp 列（显式选择）",
+        "pickup_desc": ("当工作表存在表头为 <code>PickUp</code> 的列时，"
+                        "该列即为这张表的选择依据：标 <code>Y</code>"
+                        "（也接受 yes / x / 1 / pickup / 是）的行会被提取，"
+                        "该表的标黄仅作参考显示。没有 PickUp 列的工作表"
+                        "仍按标黄提取。"),
+        "pickup_sheet_line": ("{sheet}：PickUp 列为 <strong>{col}</strong> 列"
+                              "（表头在第 {row} 行），共标记 "
+                              "<strong>{n}</strong> 行。"),
+        "pickup_details_summary": "{sheet}：通过 PickUp 选中的 {n} 个 SKU（点击查看）",
+        "pickup_unrecognized_note": ("PickUp 列中有 {n} 个无法识别的值，"
+                                     "对应的行没有被选择（只认 Y / yes / x / "
+                                     "1 / pickup / 是）："),
+        "pickup_no_sku_note": "{n} 个已标记的行中没有找到可识别的 SKU：",
+        "pickup_unmarked_note": ("本表有 {n} 个标黄 SKU 未在 PickUp 列标记，"
+                                 "因此没有被选择 — 如需订购，请标上 Y 后重新"
+                                 "运行："),
+        "pickup_none": "所有工作表都没有 PickUp 列 — 本次按标黄单元格提取（默认方式）。",
         "review_memory_note": ("标注“已记住”的列在之前的运行中已经过人工确认，"
                                "本次无需再调用 AI。如需让工具忘记某个工作表"
                                "已记住的列，生成前将该表的款号全部取消勾选即可。"),

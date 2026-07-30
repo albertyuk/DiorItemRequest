@@ -7,6 +7,13 @@ filled **ProductsList** workbook for download.
 
 ## How it works
 
+- **Explicit selection beats color detection**: a sheet whose header area
+  (first 15 rows) contains a column headed `PickUp` (any casing/spacing)
+  is selected *only* by that column — rows marked `Y` (or yes / x / 1 /
+  pickup / 是) are extracted, unrecognized values and highlighted-but-
+  unmarked SKUs are surfaced on the report, and highlights there no
+  longer select. Sheets without the column keep the highlight behavior
+  below, so the seasonal map needs no changes.
 - Highlights in the map are theme-indexed fills (accent4 / theme 7, light
   tint), not RGB — detection handles both, configurable at the top of
   `pipeline.py` (`HIGHLIGHT_THEMES`, `YELLOW_FAMILY`).

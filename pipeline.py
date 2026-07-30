@@ -49,6 +49,35 @@ def _plausible_sku(value: str) -> bool:
             and any(ch.isalpha() for ch in value)
             and value.count(" ") <= 1)
 
+# --- Explicit "PickUp" selection ------------------------------------------
+# A sheet may carry a marker column whose header normalizes to "pickup"
+# (PickUp / pick up / PICK-UP ...). When present it is the PRIMARY selector
+# for that sheet: rows marked with a recognized signal are extracted and
+# highlights on that sheet are reported but no longer select. Sheets
+# without the column keep the yellow-highlight behavior.
+MARKER_HEADER_NORM = "pickup"
+MARKER_HEADER_SCAN_ROWS = 15   # header must appear in the first N rows
+# Canonical mark is "Y"; these case-insensitive equivalents also count.
+MARKER_SIGNALS = {"y", "yes", "x", "1", "true", "ok", "pickup", "✓", "√",
+                  "是"}
+
+
+def _norm_header(value: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", value.casefold())
+
+
+def _find_marker_column(ws) -> tuple[str | None, int]:
+    """(column letter, header row) of the sheet's PickUp column, or
+    (None, 0). Exact normalized match only — a stray word containing
+    'pickup' must not hijack a sheet's selection."""
+    for row in ws.iter_rows(min_row=1, max_row=MARKER_HEADER_SCAN_ROWS):
+        for cell in row:
+            if (isinstance(cell.value, str)
+                    and _norm_header(cell.value) == MARKER_HEADER_NORM):
+                return cell.column_letter, cell.row
+    return None, 0
+
+
 QUERY_SHEET = "query"
 QUERY_HEADERS = [
     "Barcode", "Sku", "Division", "Department", "Season",
@@ -126,10 +155,36 @@ class SheetScan:
     # cells found only through AI-located SKU columns (non-standard formats)
     ai_sku_cells: int = 0
     ai_highlighted_cell_details: list[tuple[str, str, str]] = field(default_factory=list)
+    # explicit PickUp-column selection (primary when the column exists)
+    marker_column: str | None = None
+    marker_header_row: int = 0
+    marked_rows: int = 0
+    marked_skus: set[str] = field(default_factory=set)
+    marked_cell_details: list[tuple[str, str, str]] = field(default_factory=list)
+    marker_unrecognized: list[tuple[str, str]] = field(default_factory=list)  # (coord, value)
+    marker_no_sku_rows: list[str] = field(default_factory=list)  # marker coords
+
+    @property
+    def uses_marker(self) -> bool:
+        return self.marker_column is not None
+
+    @property
+    def selected_skus(self) -> set[str]:
+        """The sheet's selection: PickUp marks when the column exists,
+        else the yellow highlights."""
+        return self.marked_skus if self.uses_marker else self.highlighted_skus
+
+    @property
+    def highlighted_unmarked(self) -> list[str]:
+        """Highlighted SKUs a PickUp sheet did NOT mark — shown to the
+        human, because highlights alone no longer select there."""
+        if not self.uses_marker:
+            return []
+        return sorted(self.highlighted_skus - self.marked_skus)
 
     @property
     def bases(self) -> set[str]:
-        return {extract_base(s) for s in self.highlighted_skus}
+        return {extract_base(s) for s in self.selected_skus}
 
 
 @dataclass
@@ -175,6 +230,9 @@ def scan_sell_thru_map(path, ai_columns: dict | None = None,
         sheets = []
         for ws in wb.worksheets:
             scan = SheetScan(name=ws.title)
+            scan.marker_column, scan.marker_header_row = \
+                _find_marker_column(ws)
+            m_col, m_row = scan.marker_column, scan.marker_header_row
             sheet_ai = ai_columns.get(ws.title) or {}
             ai_cols = sheet_ai.get("columns") or {}
             ai_min_row = (sheet_ai.get("header_row") or 0) + 1
@@ -182,35 +240,72 @@ def scan_sell_thru_map(path, ai_columns: dict | None = None,
                 seen_rows += 1
                 if progress and seen_rows % 200 == 0:
                     progress("scan", seen_rows, total_rows)
+                # Marker state first: it decides how this row's SKUs count.
+                marked = False
+                marker_coord = None
+                if m_col:
+                    for cell in row:
+                        if cell.value is None:
+                            continue
+                        if (cell.column_letter == m_col
+                                and cell.row > m_row):
+                            raw = str(cell.value).strip()
+                            marker_coord = cell.coordinate
+                            if raw.casefold() in MARKER_SIGNALS:
+                                marked = True
+                                scan.marked_rows += 1
+                            elif len(scan.marker_unrecognized) < MAX_OTHER_FILLS:
+                                scan.marker_unrecognized.append(
+                                    (cell.coordinate, raw[:40]))
+                            break
+                row_marked_sku = False
                 for cell in row:
                     value = cell.value
                     if not isinstance(value, str):
                         continue
+                    if m_col and cell.column_letter == m_col:
+                        continue  # the marker column never holds SKUs
                     sku = value.strip()
-                    if SKU_RE.match(sku):
-                        scan.sku_cells += 1
-                        if is_highlighted(cell):
-                            scan.highlighted_cells += 1
-                            scan.highlighted_skus.add(sku)
-                            if len(scan.highlighted_cell_details) < MAX_HIGHLIGHT_DETAILS:
-                                scan.highlighted_cell_details.append(
-                                    (cell.coordinate, sku, extract_base(sku)))
-                        elif len(scan.other_fills) < MAX_OTHER_FILLS:
-                            note = _fill_note(cell)
-                            if note:
-                                scan.other_fills.append(
-                                    (cell.coordinate, sku, note))
-                    elif (ai_cols and cell.row >= ai_min_row
-                          and cell.column_letter in ai_cols
-                          and _plausible_sku(sku)):
-                        scan.sku_cells += 1
+                    strict = bool(SKU_RE.match(sku))
+                    in_ai = (not strict and bool(ai_cols)
+                             and cell.row >= ai_min_row
+                             and cell.column_letter in ai_cols
+                             and _plausible_sku(sku))
+                    if not strict and not in_ai:
+                        continue
+                    scan.sku_cells += 1
+                    if in_ai:
                         scan.ai_sku_cells += 1
-                        if is_highlighted(cell):
-                            scan.highlighted_cells += 1
-                            scan.highlighted_skus.add(sku)
+                    highlighted = is_highlighted(cell)
+                    if highlighted:
+                        scan.highlighted_cells += 1
+                        scan.highlighted_skus.add(sku)
+                        details = (scan.highlighted_cell_details if strict
+                                   else scan.ai_highlighted_cell_details)
+                        if len(details) < MAX_HIGHLIGHT_DETAILS:
+                            details.append(
+                                (cell.coordinate, sku, extract_base(sku)))
+                    elif strict and len(scan.other_fills) < MAX_OTHER_FILLS:
+                        note = _fill_note(cell)
+                        if note:
+                            scan.other_fills.append(
+                                (cell.coordinate, sku, note))
+                    if marked:
+                        scan.marked_skus.add(sku)
+                        if len(scan.marked_cell_details) < MAX_HIGHLIGHT_DETAILS:
+                            scan.marked_cell_details.append(
+                                (cell.coordinate, sku, extract_base(sku)))
+                        if in_ai and not highlighted:
+                            # AI-located SKU selected by mark: record it in
+                            # the AI trace too (column-memory approval and
+                            # the report's AI section both read this list).
                             if len(scan.ai_highlighted_cell_details) < MAX_HIGHLIGHT_DETAILS:
                                 scan.ai_highlighted_cell_details.append(
                                     (cell.coordinate, sku, extract_base(sku)))
+                        row_marked_sku = True
+                if (marked and not row_marked_sku and marker_coord
+                        and len(scan.marker_no_sku_rows) < MAX_OTHER_FILLS):
+                    scan.marker_no_sku_rows.append(marker_coord)
             sheets.append(scan)
         if progress:
             progress("scan", total_rows, total_rows)
@@ -398,6 +493,13 @@ def sheet_to_dict(s: SheetScan) -> dict:
         "other_fills": s.other_fills,
         "ai_sku_cells": s.ai_sku_cells,
         "ai_highlighted_cell_details": s.ai_highlighted_cell_details,
+        "marker_column": s.marker_column,
+        "marker_header_row": s.marker_header_row,
+        "marked_rows": s.marked_rows,
+        "marked_cell_details": s.marked_cell_details,
+        "marker_unrecognized": s.marker_unrecognized,
+        "marker_no_sku_rows": s.marker_no_sku_rows,
+        "highlighted_unmarked": s.highlighted_unmarked[:200],
     }
 
 
@@ -442,12 +544,18 @@ def scan_and_match(map_path, query_path, ai_detection=None,
     base_skus: dict[str, set] = {}
     sources: dict[str, set] = {}
     for sheet in scan.sheets:
-        for sku in sheet.highlighted_skus:
+        for sku in sheet.selected_skus:
             base_skus.setdefault(extract_base(sku), set()).add(sku)
-        for _, _, base in sheet.highlighted_cell_details:
-            sources.setdefault(base, set()).add("standard")
-        for _, _, base in sheet.ai_highlighted_cell_details:
-            sources.setdefault(base, set()).add("ai")
+        if sheet.uses_marker:
+            for _, _, base in sheet.marked_cell_details:
+                sources.setdefault(base, set()).add("pickup")
+            for _, _, base in sheet.ai_highlighted_cell_details:
+                sources.setdefault(base, set()).add("ai")
+        else:
+            for _, _, base in sheet.highlighted_cell_details:
+                sources.setdefault(base, set()).add("standard")
+            for _, _, base in sheet.ai_highlighted_cell_details:
+                sources.setdefault(base, set()).add("ai")
 
     return {
         "sheets": [sheet_to_dict(s) for s in scan.sheets],

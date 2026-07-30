@@ -68,6 +68,57 @@
     {% endif %}
   {% endfor %}
 
+  <h3>{{ t('pickup_heading') }}</h3>
+  {% set marker_sheets = report.sheets | selectattr('marker_column') | list %}
+  {% if marker_sheets %}
+    <p class="muted">{{ t('pickup_desc') | safe }}</p>
+    {% for s in marker_sheets %}
+      <p class="muted">{{ t('pickup_sheet_line', sheet=s.name,
+                            col=s.marker_column, row=s.marker_header_row,
+                            n=s.marked_rows) | safe }}</p>
+      {% if s.marked_cell_details %}
+        <details>
+          <summary>{{ t('pickup_details_summary', sheet=s.name,
+                        n=s.marked_cell_details | length) }}</summary>
+          <table>
+            <tr><th>{{ t('th_cell') }}</th><th>SKU</th>
+                <th>{{ t('th_base_extracted') }}</th></tr>
+            {% for coord, sku, base in s.marked_cell_details %}
+              <tr><td>{{ coord }}</td><td>{{ sku }}</td><td>{{ base }}</td></tr>
+            {% endfor %}
+          </table>
+        </details>
+      {% endif %}
+      {% if s.marker_unrecognized %}
+        <div class="warn">{{ t('pickup_unrecognized_note',
+                              n=s.marker_unrecognized | length) }}
+          <table>
+            <tr><th>{{ t('th_cell') }}</th><th>{{ t('th_value') }}</th></tr>
+            {% for coord, value in s.marker_unrecognized %}
+              <tr><td>{{ coord }}</td><td>{{ value }}</td></tr>
+            {% endfor %}
+          </table>
+        </div>
+      {% endif %}
+      {% if s.marker_no_sku_rows %}
+        <div class="warn">{{ t('pickup_no_sku_note',
+                              n=s.marker_no_sku_rows | length) }}
+          <span class="muted">{{ s.marker_no_sku_rows | join(", ") }}</span>
+        </div>
+      {% endif %}
+      {% if s.highlighted_unmarked %}
+        <div class="warn">{{ t('pickup_unmarked_note',
+                              n=s.highlighted_unmarked | length) }}
+          <ul class="compact">
+            {% for sku in s.highlighted_unmarked %}<li>{{ sku }}</li>{% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+    {% endfor %}
+  {% else %}
+    <p class="muted">{{ t('pickup_none') }}</p>
+  {% endif %}
+
   <h3>{{ t('ai_heading') }}</h3>
   <p class="muted">{{ t('ai_desc') }}</p>
   {% if report.ai_note %}
