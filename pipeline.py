@@ -7,12 +7,16 @@ expands to multiple GB of memory in normal mode.
 
 from __future__ import annotations
 
+import base64
+import io
 import logging
 import re
 import shutil
 from dataclasses import dataclass, field
 
 from openpyxl import load_workbook
+
+import sheet_images
 
 log = logging.getLogger(__name__)
 
@@ -88,6 +92,8 @@ QUERY_HEADERS = [
 
 TEMPLATE_SHEET = "Sheet1"
 TEMPLATE_COLS = 13  # A..M
+IMAGE_COL = 14      # N — product images go all the way to the right
+IMAGE_MAX_PX = 84   # thumbnail height in the output workbook
 
 # Cap the "other fills" review list so one oddly formatted sheet cannot
 # balloon the report.
@@ -406,14 +412,39 @@ def _barcode_text(value) -> str:
     return str(value)
 
 
+def _place_image(ws, row: int, data: bytes) -> bool:
+    """Anchor one product thumbnail in the image column of `row`."""
+    from openpyxl.drawing.image import Image as XLImage
+    from openpyxl.utils import get_column_letter
+
+    try:
+        img = XLImage(io.BytesIO(data))
+    except Exception:  # not a raster PIL can open — skip, never fail a run
+        return False
+    if not img.height or not img.width:
+        return False
+    scale = min(1.0, IMAGE_MAX_PX / img.height)
+    img.height = int(img.height * scale)
+    img.width = int(img.width * scale)
+    ws.add_image(img, f"{get_column_letter(IMAGE_COL)}{row}")
+    # px -> pt (0.75) plus a little breathing room
+    ws.row_dimensions[row].height = max(
+        ws.row_dimensions[row].height or 15, int(img.height * 0.75) + 6)
+    return True
+
+
 def build_output(template_path, out_path, matched, unmatched_bases,
-                 base_sheets=None, progress=None) -> int:
+                 base_sheets=None, images=None, progress=None) -> int:
     """Copy the template and append one row per matched query row, sorted by
     base, then color, then size. Returns the number of data rows written.
 
     The query and template columns do NOT align — rows are mapped by meaning,
     and query's Product reference / Color code / Size / Item Type / Path are
     intentionally dropped.
+
+    images (optional): {base: raw image bytes}. Each base's product picture
+    is placed once, on the first row of its block, in column N — all the
+    way to the right of the template's 13 columns.
     """
     shutil.copyfile(template_path, out_path)
     wb = load_workbook(out_path)
@@ -426,6 +457,11 @@ def build_output(template_path, out_path, matched, unmatched_bases,
 
     rows = [row for base in sorted(matched) for row in matched[base]]
     rows.sort(key=_sku_sort_key)
+
+    images = images or {}
+    if images:
+        ws.cell(row=1, column=IMAGE_COL, value="Image")
+    placed: set[str] = set()
 
     total = len(rows) or 1
     n = 1
@@ -450,6 +486,10 @@ def build_output(template_path, out_path, matched, unmatched_bases,
         ws.cell(row=n, column=10,
                 value=f'=IF(AND(F{n}<>"", I{n}<>""), F{n}*I{n}, "")')
         # K, L, M (Gift Recipient / Organization / Position) stay blank.
+        base = str(sku).split(" - ")[0]
+        if base in images and base not in placed:
+            if _place_image(ws, n, images[base]):
+                placed.add(base)
 
     unmatched_ws = wb.create_sheet("Unmatched")
     unmatched_ws.append(["Base SKU", "Highlighted on sheet(s)"])
@@ -479,6 +519,7 @@ class RunReport:
     excluded: list | None = None         # bases the human unticked at review
     base_sources: dict | None = None     # base -> ["standard"|"ai", ...]
     query_info: dict | None = None       # stored-query metadata at scan time
+    images_count: int = 0                # product images placed in column N
 
 
 def sheet_to_dict(s: SheetScan) -> dict:
@@ -557,6 +598,18 @@ def scan_and_match(map_path, query_path, ai_detection=None,
             for _, _, base in sheet.ai_highlighted_cell_details:
                 sources.setdefault(base, set()).add("ai")
 
+    # Product images: pull them for the selected SKU rows NOW — the map
+    # file is deleted right after the scan, so the draft must carry them
+    # (base64) through the review checkpoint to the build.
+    wanted: dict[str, dict[int, str]] = {}
+    for sheet in scan.sheets:
+        details = (sheet.marked_cell_details if sheet.uses_marker
+                   else (sheet.highlighted_cell_details
+                         + sheet.ai_highlighted_cell_details))
+        rows_map = sheet_images.rows_by_base(details)
+        if rows_map:
+            wanted[sheet.name] = rows_map
+
     return {
         "sheets": [sheet_to_dict(s) for s in scan.sheets],
         "bases": bases,
@@ -565,6 +618,7 @@ def scan_and_match(map_path, query_path, ai_detection=None,
         "matched": {b: [list(r) for r in rows]
                     for b, rows in matched.items()},
         "other_fills": scan.other_fills,
+        "images": sheet_images.extract_for(map_path, wanted),
     }
 
 
@@ -583,9 +637,22 @@ def build_from_selection(template_path, out_path, draft, selected=None,
     matched = {b: [tuple(r) for r in rows]
                for b, rows in draft["matched"].items() if b in kept}
     unmatched = sorted(b for b in kept if b not in matched)
+
+    # Decode + validate the product images for the kept, matched bases
+    # (only decodable rasters count, so the report number is exact).
+    images: dict[str, bytes] = {}
+    for b in set(matched) & set(draft.get("images") or {}):
+        try:
+            from PIL import Image as PILImage
+            data = base64.b64decode(draft["images"][b]["data"])
+            PILImage.open(io.BytesIO(data)).verify()
+            images[b] = data
+        except Exception:
+            continue
+
     rows_written = build_output(
         template_path, out_path, matched, unmatched, base_sheets=bases,
-        progress=progress)
+        images=images, progress=progress)
 
     ai_info = ai_info or {}
     report = RunReport(
@@ -604,6 +671,7 @@ def build_from_selection(template_path, out_path, draft, selected=None,
         excluded=excluded,
         base_sources=draft.get("base_sources"),
         query_info=draft.get("query_info"),
+        images_count=len(images),
     )
     log.info(
         "run: bases=%d kept=%d matched=%d unmatched=%d excluded=%d rows=%d",

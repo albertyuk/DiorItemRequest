@@ -61,6 +61,7 @@ def report_to_dict(report: "pipeline.RunReport", map_filename: str,
         "excluded": report.excluded or [],
         "other_fills": report.other_fills,
         "rows_written": report.rows_written,
+        "images_count": report.images_count,
         "query_info": report.query_info,
         "uploaded_by": uploaded_by,
         "built_by": built_by,
@@ -452,13 +453,17 @@ def create_app(data_dir: Path | str | None = None,
             abort(404)
         draft = json.loads(draft_path.read_text())
         entries = []
+        images = draft.get("images") or {}
         for base, sheets in draft.get("bases", {}).items():
+            img = images.get(base)
             entries.append({
                 "base": base,
                 "skus": draft.get("base_skus", {}).get(base, []),
                 "sheets": sheets,
                 "sources": draft.get("base_sources", {}).get(base, []),
                 "rows": len(draft.get("matched", {}).get(base, [])),
+                "img": (f"data:image/{img['ext']};base64,{img['data']}"
+                        if img else ""),
             })
         entries.sort(key=lambda e: (e["rows"] == 0, e["base"]))
         ai = draft.get("ai") or {}

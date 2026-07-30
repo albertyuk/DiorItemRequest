@@ -525,6 +525,111 @@ def test_pickup_e2e_review_badge_and_report(tmp_path):
     assert "641V19A1491X8300" in report                # unmarked highlight
 
 
+def _png_bytes(size=(120, 90)):
+    from PIL import Image as PILImage
+    buf = io.BytesIO()
+    PILImage.new("RGB", size, (200, 30, 60)).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _image_workbook(path):
+    """Highlight sheet with a product image embedded on the SKU's row (and
+    a second highlighted SKU with no image)."""
+    from openpyxl.drawing.image import Image as XLImage
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "FW26"
+    ws["A1"] = "MMC"
+    ws["A2"] = "644S16B7E72X5805"
+    ws["A2"].fill = _yellow()
+    ws["A5"] = "641V19A1491X8300"          # highlighted, no image
+    ws["A5"].fill = _yellow()
+    img = XLImage(io.BytesIO(_png_bytes()))
+    ws.add_image(img, "C2")
+    wb.save(path)
+
+
+def _image_query(path):
+    qwb = Workbook()
+    qws = qwb.active
+    qws.title = "query"
+    qws.append(pipeline.QUERY_HEADERS)
+    qws.append(["3617000000001", "644S16B7E72 - X5805 - T36", "d", "dep",
+                "s", None, None, None, 1, 10, 20, "t", "p"])
+    qws.append(["3617000000002", "644S16B7E72 - X5805 - T38", "d", "dep",
+                "s", None, None, None, 2, 10, 20, "t", "p"])
+    qwb.save(path)
+
+
+def test_images_extracted_and_placed_in_column_n(tmp_path):
+    map_path = tmp_path / "map.xlsx"
+    _image_workbook(map_path)
+    query_path = tmp_path / "q.xlsx"
+    _image_query(query_path)
+
+    draft = pipeline.scan_and_match(map_path, query_path)
+    # the image on the SKU's row was captured into the draft (base64)
+    assert set(draft["images"]) == {"644S16B7E72"}
+    assert draft["images"]["644S16B7E72"]["ext"] == "png"
+
+    out = tmp_path / "out.xlsx"
+    template = Path(__file__).parent / "assets" / "ProductsListTemplate.xlsx"
+    report = pipeline.build_from_selection(template, out, draft)
+    assert report.images_count == 1
+    assert report.rows_written == 2
+
+    wb = load_workbook(out)
+    ws = wb.active
+    assert ws.cell(row=1, column=14).value == "Image"   # header in column N
+    assert len(ws._images) == 1
+    anchor = ws._images[0].anchor._from
+    assert anchor.col == 13                              # 0-based N
+    assert anchor.row == 1                               # first row of block
+    # thumbnail is drawn scaled down (extent is stored in EMU: 9525/px)
+    assert ws._images[0].anchor.ext.cy <= pipeline.IMAGE_MAX_PX * 9525
+    # and the row is tall enough to show it
+    assert (ws.row_dimensions[2].height or 0) > 15
+
+
+def test_images_follow_pickup_marked_rows(tmp_path):
+    from openpyxl.drawing.image import Image as XLImage
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Delivery"
+    ws["A1"] = "SKU"
+    ws["B1"] = "PickUp"
+    ws["A2"] = "652P92X3F74X8090"
+    ws["B2"] = "Y"
+    ws["A3"] = "657H91B2C33X4411"          # unmarked: its image must NOT come
+    ws.add_image(XLImage(io.BytesIO(_png_bytes())), "C2")
+    ws.add_image(XLImage(io.BytesIO(_png_bytes())), "C3")
+    map_path = tmp_path / "map.xlsx"
+    wb.save(map_path)
+    query_path = tmp_path / "q.xlsx"
+    _image_query(query_path)
+
+    draft = pipeline.scan_and_match(map_path, query_path)
+    assert set(draft["images"]) == {"652P92X3F74"}
+
+
+def test_images_shown_at_review_and_counted_on_report(tmp_path):
+    app = create_app(data_dir=tmp_path / "data", open_access=True)
+    client = app.test_client()
+    map_path = tmp_path / "map.xlsx"
+    _image_workbook(map_path)
+    query_path = tmp_path / "q.xlsx"
+    _image_query(query_path)
+
+    data, _ = _finish_job(client, _upload(client, map_path, query_path))
+    html = client.get(data["next"]).data.decode()
+    assert "data:image/png;base64," in html             # review thumbnail
+    skus = re.findall(r'name="sku" value="([^"]+)"', html)
+    build = re.search(r'action="(/review/[0-9_a-f]+/build)"', html).group(1)
+    resp = client.post(build, data={"sku": skus}, follow_redirects=True)
+    report = resp.data.decode()
+    assert "product image(s) were copied" in report
+
+
 def test_column_memory_fingerprint_and_lookup(tmp_path):
     cells = {"A": " Capsule ", "B": "TS  SKU", "C": "Qty"}
     fp = column_memory.fingerprint_row(cells)

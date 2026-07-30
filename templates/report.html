@@ -215,6 +215,9 @@
 
   <h3>{{ t('step4_title') }}</h3>
   <p class="muted">{{ t('step4_desc', rows=report.rows_written) | safe }}</p>
+  {% if report.images_count %}
+    <p class="muted">{{ t('report_images_note', n=report.images_count) | safe }}</p>
+  {% endif %}
 
   <h2>{{ t('matched_heading', n=report.matched_counts | length) }}</h2>
   {% if report.matched_counts %}

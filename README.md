@@ -28,6 +28,11 @@ filled **ProductsList** workbook for download.
 - Output = copy of `assets/ProductsListTemplate.xlsx` with mapped columns,
   `TotalCost`/`TotalSales` as formulas, barcodes as text, plus an
   `Unmatched` sheet listing highlighted bases with zero query rows.
+- **Product images travel with their SKUs**: pictures embedded in the map
+  on a selected SKU's row are extracted straight from the xlsx drawing
+  XML (read-only parsing never exposes them), carried through the review
+  checkpoint as thumbnails, and placed in column `N` of the output — one
+  per base, on the first row of its block (`sheet_images.py`).
 - The UI is bilingual (English / 简体中文) — top-left toggle, remembered in a
   cookie. Strings live in `translations.py`. Run reports are persisted as
   JSON next to their output (`/report/<run_id>`), so they survive refresh

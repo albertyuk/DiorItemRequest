@@ -82,9 +82,10 @@
     <a href="{{ url_for('static', filename='img/help/review_zh.png') }}"
        target="_blank"><img loading="lazy" alt="确认页截图"
        src="{{ url_for('static', filename='img/help/review_zh.png') }}"></a>
-    <figcaption>确认页示例：Delivery 表按 PickUp 列提取（带绿色 PickUp
-      标记），黄色警示框提醒有 1 个无法识别的值和 1 个标黄未标记的款号；
-      “无库存”标记表示库存查询表中没有匹配记录；底部生成按钮实时显示行数。</figcaption>
+    <figcaption>确认页示例：每个款号旁显示来自 Sell-Thru Map 的产品缩略图；
+      Delivery 表按 PickUp 列提取（带绿色 PickUp 标记），黄色警示框提醒有
+      1 个无法识别的值和 1 个标黄未标记的款号；“无库存”标记表示库存查询表中
+      没有匹配记录；底部生成按钮实时显示行数。</figcaption>
   </figure>
 
   <h2>如何阅读运行报告？</h2>
@@ -163,6 +164,9 @@
         （数量 × 单价），修改数量后会自动重新计算。</li>
     <li>条形码保存为<strong>文本</strong>格式，不会丢失前导零，
         也不会变成科学计数法。</li>
+    <li>产品图片会跟随款号：所选 SKU 所在行如带有图片，会被复制到表格
+        最右侧的 <code>N</code> 列 — 每个基础款号一张，放在该款号的第一行
+        （确认页上也会显示缩略图）。</li>
     <li>Gift Recipient / Organization / Position 三列按模板要求留空。</li>
     <li>只保留最近 <strong>10</strong> 次的输出和报告，需要的文件请及时下载。</li>
   </ul>
@@ -267,11 +271,12 @@
     <a href="{{ url_for('static', filename='img/help/review_en.png') }}"
        target="_blank"><img loading="lazy" alt="Review page screenshot"
        src="{{ url_for('static', filename='img/help/review_en.png') }}"></a>
-    <figcaption>A review page in action: the Delivery sheet is selected by
-      its PickUp column (green PickUp badges), the yellow box warns about
-      one unrecognized value and one highlighted-but-unmarked SKU, "no
-      stock" flags a SKU with no stock rows, and the build button shows
-      the exact row count.</figcaption>
+    <figcaption>A review page in action: product thumbnails from the map
+      next to each SKU, the Delivery sheet selected by its PickUp column
+      (green PickUp badges), the yellow box warning about one unrecognized
+      value and one highlighted-but-unmarked SKU, "no stock" flagging a
+      SKU with no stock rows, and the build button showing the exact row
+      count.</figcaption>
   </figure>
 
   <h2>How to read the run report</h2>
@@ -364,6 +369,11 @@
         (quantity × unit price) — they recalculate if you edit quantities.</li>
     <li>Barcodes are stored as <strong>text</strong> — no lost leading zeros,
         no scientific notation.</li>
+    <li>Product pictures follow their SKUs: when the map carries an image
+        on a selected SKU's row, it is copied into column <code>N</code>
+        at the right edge of the sheet — one per base SKU, on the first
+        row of its block (you also see it as a thumbnail on the review
+        page).</li>
     <li>Gift Recipient / Organization / Position stay blank, as the template
         expects.</li>
     <li>Only the last <strong>10</strong> outputs and reports are kept —

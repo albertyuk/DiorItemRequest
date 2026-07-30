@@ -118,6 +118,11 @@ STRINGS = {
         "th_source": "Source", "src_ai": "AI", "src_memory": "remembered",
         "badge_pickup": "PickUp",
         "th_value": "Value",
+        "th_image": "Image",
+        "report_images_note": ("{n} product image(s) were copied from the "
+                               "map into column <code>N</code>, at the "
+                               "right edge of the sheet — one per base "
+                               "SKU, on the first row of its block."),
         "review_pickup_note": ("Sheet {sheet}: selection comes from its "
                                "PickUp column ({col}) — {n} marked row(s); "
                                "highlights on this sheet do not select."),
@@ -458,6 +463,10 @@ STRINGS = {
         "th_source": "来源", "src_ai": "AI", "src_memory": "已记住",
         "badge_pickup": "PickUp",
         "th_value": "内容",
+        "th_image": "图片",
+        "report_images_note": ("已从 Sell-Thru Map 复制 {n} 张产品图片到表格"
+                               "最右侧的 <code>N</code> 列 — 每个基础款号一张，"
+                               "放在该款号的第一行。"),
         "review_pickup_note": ("工作表 {sheet}：以其 PickUp 列（{col} 列）为准 — "
                                "共标记 {n} 行；该表的标黄不再用于选择。"),
         "review_pickup_warn": ("{sheet}：{bad} 个 PickUp 值无法识别（已忽略），"

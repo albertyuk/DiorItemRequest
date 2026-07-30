@@ -71,13 +71,19 @@
         <span class="spacer"></span>
         <span class="muted" id="counter"></span>
       </div>
+      {% set any_imgs = entries | selectattr('img') | list %}
       <table>
-        <tr><th></th><th>{{ t('th_base') }}</th><th>{{ t('th_colorways') }}</th>
+        <tr><th></th>{% if any_imgs %}<th>{{ t('th_image') }}</th>{% endif %}
+            <th>{{ t('th_base') }}</th><th>{{ t('th_colorways') }}</th>
             <th>{{ t('th_sheets') }}</th><th>{{ t('th_stock_rows') }}</th></tr>
         {% for e in entries %}
           <tr>
             <td><input type="checkbox" name="sku" value="{{ e.base }}" checked
                        data-rows="{{ e.rows }}" aria-label="{{ e.base }}"></td>
+            {% if any_imgs %}
+              <td>{% if e.img %}<img src="{{ e.img }}" alt=""
+                     style="height:46px;display:block">{% endif %}</td>
+            {% endif %}
             <td><strong>{{ e.base }}</strong>
                 {% if 'pickup' in e.sources %}
                   <span class="badge badge-ok">{{ t('badge_pickup') }}</span>
