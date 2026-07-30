@@ -129,9 +129,21 @@ def resolve_session(ctx: "AuthContext", cookie_value: str | None):
 USERNAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{1,31}$")
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
+# Hard ceilings on untrusted credential input. Usernames become throttle
+# bucket keys and passwords are fed to PBKDF2, so neither may be
+# unbounded — truncate before either is used, well above any legitimate
+# value (valid_username caps real names at 32).
+MAX_USERNAME_LEN = 64
+MAX_PASSWORD_LEN = 1024
+
 
 def normalize_username(raw) -> str:
-    return (raw or "").strip().casefold()
+    return (raw or "")[:MAX_USERNAME_LEN].strip().casefold()
+
+
+def clamp_password(raw) -> str:
+    """Bound a submitted password before it reaches the hasher."""
+    return (raw or "")[:MAX_PASSWORD_LEN]
 
 
 def valid_username(username: str) -> bool:
@@ -147,7 +159,7 @@ def valid_email(email: str) -> bool:
 
 
 def valid_password(password) -> bool:
-    return len(password or "") >= 8
+    return MAX_PASSWORD_LEN >= len(password or "") >= 8
 
 
 # --- storage ----------------------------------------------------------------
@@ -187,6 +199,14 @@ class AuthDB:
         self.path = str(path)
         with closing(self._conn()) as conn, conn:
             conn.executescript(_SCHEMA)
+        # Password hashes and token hashes live here: keep it owner-only
+        # (defense in depth — the Fly volume is single-tenant, but a
+        # stray backup or a shared host should not expose it).
+        for suffix in ("", "-wal", "-shm"):
+            try:
+                Path(self.path + suffix).chmod(0o600)
+            except OSError:
+                pass
 
     def _conn(self):
         conn = sqlite3.connect(self.path, timeout=10)
@@ -396,6 +416,11 @@ class AuthContext:
     invite_ttl_hours: int = 72
     reset_ttl_hours: int = 2
     public_base_url: str = ""
+    # Only an edge that SETS and STRIPS the client-IP header may be
+    # believed. Off that edge the header is client-controlled, and
+    # trusting it would let one attacker mint a fresh throttle bucket per
+    # request — defeating per-IP rate limiting entirely.
+    trust_ip_header: bool = False
 
 
 def load_secret(data_dir, configured: str | None = None) -> str:

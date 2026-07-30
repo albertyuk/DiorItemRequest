@@ -118,6 +118,11 @@ def create_app(data_dir: Path | str | None = None,
     template_path = Path(__file__).parent / "assets" / "ProductsListTemplate.xlsx"
     for d in (data_dir, outputs_dir, tmp_dir, pending_dir):
         d.mkdir(parents=True, exist_ok=True)
+        try:
+            # Generated workbooks and drafts carry internal pricing data.
+            d.chmod(0o700)
+        except OSError:
+            pass
 
     auth_ctx = auth.AuthContext(
         db=auth.AuthDB(data_dir / "auth.db"),
@@ -129,6 +134,9 @@ def create_app(data_dir: Path | str | None = None,
         invite_ttl_hours=int(os.environ.get("INVITE_TTL_HOURS", "72")),
         reset_ttl_hours=int(os.environ.get("RESET_TTL_HOURS", "2")),
         public_base_url=os.environ.get("PUBLIC_BASE_URL", "").rstrip("/"),
+        # Believe the edge-set client-IP header only when actually behind
+        # Fly's proxy, which strips it from inbound traffic.
+        trust_ip_header=bool(os.environ.get("FLY_APP_NAME")),
     )
 
     app = Flask(__name__)
@@ -210,13 +218,32 @@ def create_app(data_dir: Path | str | None = None,
     jobs: dict[str, dict] = {}
     jobs_lock = threading.Lock()
 
+    MAX_JOBS = 200          # registry ceiling, far above real concurrency
+    JOB_TTL = 2 * 3600      # finished jobs
+    JOB_HARD_TTL = 12 * 3600  # a job still "running" this long is dead
+
     def purge_jobs() -> None:
-        cutoff = time.time() - 2 * 3600
+        """Drop finished jobs past their TTL, and stuck ones past a hard
+        ceiling — a worker killed mid-scan (OOM, restart) would otherwise
+        leave a 'running' entry that never ages out."""
+        now_t = time.time()
         with jobs_lock:
-            for job_id in [j for j, job in jobs.items()
-                           if job.get("created", 0) < cutoff
-                           and job.get("status") != "running"]:
-                del jobs[job_id]
+            for job_id, job in list(jobs.items()):
+                age = now_t - job.get("created", 0)
+                running = job.get("status") == "running"
+                if age > (JOB_HARD_TTL if running else JOB_TTL):
+                    del jobs[job_id]
+            # Absolute bound: evict oldest first if something goes wrong.
+            if len(jobs) > MAX_JOBS:
+                for job_id, _ in sorted(
+                        jobs.items(),
+                        key=lambda kv: kv[1].get("created", 0)
+                )[:len(jobs) - MAX_JOBS]:
+                    del jobs[job_id]
+
+    # exposed for tests (the registry is otherwise closure-local)
+    app.extensions["jobs"] = jobs
+    app.extensions["purge_jobs"] = purge_jobs
 
     def _build_and_store(draft: dict, selected, reviewed: bool,
                          built_by: str = "") -> str:
@@ -311,8 +338,48 @@ def create_app(data_dir: Path | str | None = None,
     def remember_lang(resp):
         lang = request.args.get("lang")
         if lang in SUPPORTED_LANGS:
+            # No script reads this cookie, so HttpOnly costs nothing and
+            # keeps it out of reach of any injected JS.
             resp.set_cookie("lang", lang, max_age=365 * 24 * 3600,
-                            samesite="Lax")
+                            samesite="Lax", httponly=True,
+                            secure=cookie_secure)
+        return resp
+
+    # Content-Security-Policy: templates carry inline <script> blocks and
+    # style attributes, and review thumbnails are data: URIs — hence
+    # 'unsafe-inline' for script/style and data: for img. Everything else
+    # is locked to same-origin, and the page may not be framed at all.
+    CSP = ("default-src 'self'; "
+           "script-src 'self' 'unsafe-inline'; "
+           "style-src 'self' 'unsafe-inline'; "
+           "img-src 'self' data:; "
+           "font-src 'self'; "
+           "connect-src 'self'; "
+           "form-action 'self'; "
+           "frame-ancestors 'none'; "
+           "base-uri 'none'; "
+           "object-src 'none'")
+
+    @app.after_request
+    def security_headers(resp):
+        resp.headers.setdefault("Content-Security-Policy", CSP)
+        resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+        resp.headers.setdefault("X-Frame-Options", "DENY")
+        resp.headers.setdefault("Referrer-Policy",
+                                "strict-origin-when-cross-origin")
+        resp.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+        resp.headers.setdefault("Permissions-Policy",
+                                "geolocation=(), microphone=(), camera=()")
+        # HSTS only where TLS is actually in force. Fly terminates TLS at
+        # its edge and forwards over the private network, so the proxy
+        # header is the reliable signal; sending HSTS to a plain-HTTP
+        # local dev browser would lock it out of localhost.
+        if cookie_secure and (
+                request.is_secure
+                or request.headers.get("X-Forwarded-Proto") == "https"):
+            resp.headers.setdefault(
+                "Strict-Transport-Security",
+                "max-age=31536000; includeSubDomains")
         return resp
 
     @app.context_processor

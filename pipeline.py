@@ -94,6 +94,11 @@ TEMPLATE_SHEET = "Sheet1"
 TEMPLATE_COLS = 13  # A..M
 IMAGE_COL = 14      # N — product images go all the way to the right
 IMAGE_MAX_PX = 84   # thumbnail height in the output workbook
+# A few-KB image file can declare enormous dimensions (a "decompression
+# bomb"); Pillow allocates on decode. Anything past this is dropped —
+# real product shots are a few megapixels at most.
+IMAGE_MAX_PIXELS = 40_000_000
+IMAGE_MAX_DIM = 20_000
 
 # Cap the "other fills" review list so one oddly formatted sheet cannot
 # balloon the report.
@@ -639,13 +644,22 @@ def build_from_selection(template_path, out_path, draft, selected=None,
     unmatched = sorted(b for b in kept if b not in matched)
 
     # Decode + validate the product images for the kept, matched bases
-    # (only decodable rasters count, so the report number is exact).
+    # (only decodable, sanely-sized rasters count, so the report number is
+    # exact and a crafted image cannot exhaust memory at build time).
     images: dict[str, bytes] = {}
-    for b in set(matched) & set(draft.get("images") or {}):
+    for b in sorted(set(matched) & set(draft.get("images") or {})):
         try:
             from PIL import Image as PILImage
-            data = base64.b64decode(draft["images"][b]["data"])
-            PILImage.open(io.BytesIO(data)).verify()
+            data = base64.b64decode(draft["images"][b]["data"],
+                                    validate=True)
+            with PILImage.open(io.BytesIO(data)) as probe:
+                width, height = probe.size
+                if (width * height > IMAGE_MAX_PIXELS
+                        or width > IMAGE_MAX_DIM or height > IMAGE_MAX_DIM):
+                    log.warning("dropping oversized image for %s (%dx%d)",
+                                b, width, height)
+                    continue
+                probe.verify()
             images[b] = data
         except Exception:
             continue

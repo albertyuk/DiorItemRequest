@@ -38,7 +38,38 @@ _R_EMBED = f"{{{_NS['r']}}}embed"
 # wmf) are silently skipped.
 _RASTER_EXT = {"png", "jpeg", "jpg", "gif", "bmp"}
 
-MAX_IMAGE_BYTES = 4 * 1024 * 1024  # skip anything absurdly large
+# --- Bounds. The uploaded workbook is untrusted input: every zip entry is
+# checked against its DECLARED uncompressed size before being read, so a
+# decompression bomb (a few KB inflating to gigabytes) is refused instead
+# of allocated. Budgets are cumulative, so "many small bombs" is bounded
+# too.
+MAX_IMAGE_BYTES = 4 * 1024 * 1024        # one picture
+MAX_TOTAL_IMAGE_BYTES = 48 * 1024 * 1024  # all pictures of one run
+MAX_XML_BYTES = 64 * 1024 * 1024          # one sheet/drawing/rels part
+MAX_ANCHORS_PER_SHEET = 5_000             # crafted drawing with 10^6 anchors
+
+
+def _read_bounded(zf: zipfile.ZipFile, name: str, limit: int) -> bytes:
+    """Read one zip member only if its uncompressed size fits `limit`.
+
+    zipfile.read() would happily inflate a 1 GB entry into memory; the
+    header's declared size lets us refuse first. The declared size is
+    attacker-controlled, so ZipFile.open is still capped by reading
+    limit+1 bytes and rejecting an under-declared entry."""
+    try:
+        info = zf.getinfo(name)
+    except KeyError:
+        raise
+    if info.file_size > limit:
+        log.warning("skipping oversized zip member %r (%d bytes declared)",
+                    name[:80], info.file_size)
+        raise ValueError("zip member exceeds size limit")
+    with zf.open(name) as fh:
+        data = fh.read(limit + 1)
+    if len(data) > limit:
+        log.warning("zip member %r under-declared its size", name[:80])
+        raise ValueError("zip member exceeds size limit")
+    return data
 
 
 def _rels(zf: zipfile.ZipFile, part: str) -> dict[str, str]:
@@ -46,8 +77,8 @@ def _rels(zf: zipfile.ZipFile, part: str) -> dict[str, str]:
     rels_path = posixpath.join(posixpath.dirname(part), "_rels",
                                posixpath.basename(part) + ".rels")
     try:
-        root = ET.fromstring(zf.read(rels_path))
-    except (KeyError, ET.ParseError):
+        root = ET.fromstring(_read_bounded(zf, rels_path, MAX_XML_BYTES))
+    except (KeyError, ET.ParseError, ValueError):
         return {}
     out = {}
     for rel in root.findall("pr:Relationship", _NS):
@@ -59,6 +90,12 @@ def _rels(zf: zipfile.ZipFile, part: str) -> dict[str, str]:
         else:
             resolved = posixpath.normpath(
                 posixpath.join(posixpath.dirname(part), target))
+        # A crafted Target ("../../..") normalizes to a path outside the
+        # package. Nothing is ever opened from the filesystem here (only
+        # zip members), but an escaping name is malformed by definition —
+        # drop it rather than look it up.
+        if resolved.startswith("../") or resolved.startswith("/"):
+            continue
         out[rel.get("Id", "")] = resolved
     return out
 
@@ -66,8 +103,9 @@ def _rels(zf: zipfile.ZipFile, part: str) -> dict[str, str]:
 def _sheet_parts(zf: zipfile.ZipFile) -> dict[str, str]:
     """{sheet name: worksheet part path}."""
     try:
-        wb = ET.fromstring(zf.read("xl/workbook.xml"))
-    except (KeyError, ET.ParseError):
+        wb = ET.fromstring(_read_bounded(zf, "xl/workbook.xml",
+                                         MAX_XML_BYTES))
+    except (KeyError, ET.ParseError, ValueError):
         return {}
     rels = _rels(zf, "xl/workbook.xml")
     out = {}
@@ -99,8 +137,8 @@ def sheet_anchors(zf: zipfile.ZipFile, sheet_part: str) \
         -> list[tuple[int, int, int, str]]:
     """[(from_row, to_row, from_col, media part path), ...] for one sheet."""
     try:
-        ws = ET.fromstring(zf.read(sheet_part))
-    except (KeyError, ET.ParseError):
+        ws = ET.fromstring(_read_bounded(zf, sheet_part, MAX_XML_BYTES))
+    except (KeyError, ET.ParseError, ValueError):
         return []
     sheet_rels = _rels(zf, sheet_part)
     anchors = []
@@ -109,8 +147,9 @@ def sheet_anchors(zf: zipfile.ZipFile, sheet_part: str) \
         if not drawing_part:
             continue
         try:
-            root = ET.fromstring(zf.read(drawing_part))
-        except (KeyError, ET.ParseError):
+            root = ET.fromstring(_read_bounded(zf, drawing_part,
+                                               MAX_XML_BYTES))
+        except (KeyError, ET.ParseError, ValueError):
             continue
         drawing_rels = _rels(zf, drawing_part)
         for tag in ("xdr:twoCellAnchor", "xdr:oneCellAnchor",
@@ -127,6 +166,9 @@ def sheet_anchors(zf: zipfile.ZipFile, sheet_part: str) \
                 except (TypeError, ValueError):
                     continue
                 anchors.append((row1, row2, col1, media))
+                if len(anchors) >= MAX_ANCHORS_PER_SHEET:
+                    log.warning("anchor cap reached on %r", sheet_part[:80])
+                    return anchors
     return anchors
 
 
@@ -143,6 +185,7 @@ def extract_for(map_path, wanted: dict[str, dict[int, str]]) \
     if not wanted:
         return {}
     images: dict[str, dict] = {}
+    budget = MAX_TOTAL_IMAGE_BYTES
     try:
         with zipfile.ZipFile(map_path) as zf:
             parts = _sheet_parts(zf)
@@ -151,6 +194,9 @@ def extract_for(map_path, wanted: dict[str, dict[int, str]]) \
                 if not part:
                     continue
                 for row1, row2, _col, media in sheet_anchors(zf, part):
+                    if budget <= 0:
+                        log.warning("total image budget exhausted")
+                        return images
                     base = rows.get(row1)
                     if base is None and row2 > row1:
                         base = next((rows[r] for r in range(row1, row2 + 1)
@@ -161,16 +207,18 @@ def extract_for(map_path, wanted: dict[str, dict[int, str]]) \
                     if ext not in _RASTER_EXT:
                         continue
                     try:
-                        data = zf.read(media)
-                    except KeyError:
+                        data = _read_bounded(zf, media,
+                                             min(MAX_IMAGE_BYTES, budget))
+                    except (KeyError, ValueError):
                         continue
-                    if not data or len(data) > MAX_IMAGE_BYTES:
+                    if not data:
                         continue
+                    budget -= len(data)
                     images[base] = {
                         "data": base64.b64encode(data).decode("ascii"),
                         "ext": "jpeg" if ext == "jpg" else ext,
                     }
-    except (OSError, zipfile.BadZipFile) as exc:
+    except (OSError, zipfile.BadZipFile, ValueError) as exc:
         log.warning("image extraction failed: %s", exc)
         return images
     if images:

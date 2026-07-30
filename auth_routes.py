@@ -33,9 +33,18 @@ def _ctx() -> auth.AuthContext:
 
 
 def _client_ip() -> str:
-    # Fly sets (and strips from inbound traffic) Fly-Client-IP at the edge.
-    # Never trust client-supplied X-Forwarded-For.
-    return request.headers.get("Fly-Client-IP") or request.remote_addr or "?"
+    """The throttle bucket key for this request.
+
+    Fly sets (and strips from inbound traffic) Fly-Client-IP at its edge,
+    so it is authoritative there — but only there. Anywhere else the
+    header is just client input, and believing it would hand an attacker
+    an unlimited supply of throttle buckets, so we fall back to the
+    socket peer. Client-supplied X-Forwarded-For is never trusted."""
+    if _ctx().trust_ip_header:
+        edge = request.headers.get("Fly-Client-IP")
+        if edge:
+            return edge[:64]
+    return request.remote_addr or "?"
 
 
 def _base_url() -> str:
@@ -87,7 +96,7 @@ def login_page():
         return render_template("auth/login.html")
 
     username = auth.normalize_username(request.form.get("username"))
-    password = request.form.get("password") or ""
+    password = auth.clamp_password(request.form.get("password"))
     wait = ctx.throttle.reserve([("user", username), ("ip", _client_ip())])
     if wait:
         return render_template("auth/login.html", username=username,
@@ -137,7 +146,7 @@ def setup_page():
         return render_template("auth/setup.html",
                                error=_tr("auth_throttled", n=wait),
                                form=request.form), 429
-    code = request.form.get("code") or ""
+    code = auth.clamp_password(request.form.get("code"))
     if not hmac.compare_digest(code.encode("utf-8"),
                                ctx.setup_code.encode("utf-8")):
         return fail("auth_setup_wrong_code", 401)  # the failure slot stands
@@ -146,7 +155,7 @@ def setup_page():
     username = auth.normalize_username(request.form.get("username"))
     if not auth.valid_username(username):
         return fail("auth_bad_username")
-    password = request.form.get("password") or ""
+    password = auth.clamp_password(request.form.get("password"))
     if not auth.valid_password(password):
         return fail("auth_bad_password")
     display = (request.form.get("display") or "").strip()
@@ -226,7 +235,7 @@ def _password_form(purpose: str, raw: str, signin_extra=None):
         return render_template("auth/password_form.html",
                                title=_tr(title_key))
 
-    password = request.form.get("password") or ""
+    password = auth.clamp_password(request.form.get("password"))
     # Validation that can fail happens BEFORE consumption, so a typo does
     # not kill the link.
     if not auth.valid_password(password):
@@ -340,7 +349,7 @@ def team_add():
             return _team_redirect(error="auth_bad_email")
         if ctx.db.email_taken(email):
             return _team_redirect(error="auth_email_taken")
-    password = request.form.get("password") or ""
+    password = auth.clamp_password(request.form.get("password"))
 
     if email and mailer.enabled():
         # Invite path: passwordless (inert) account; the coworker chooses
@@ -422,7 +431,7 @@ def team_password():
         return _team_redirect(error="err_not_admin")
     if ctx.db.get_user(username) is None:
         return _team_redirect(error="err_no_such_user")
-    password = request.form.get("password") or ""
+    password = auth.clamp_password(request.form.get("password"))
     if not auth.valid_password(password):
         return _team_redirect(error="auth_bad_password")
     # Rotating the hash rotates the credential fingerprint: every session
