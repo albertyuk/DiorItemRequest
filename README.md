@@ -81,8 +81,13 @@ fly secrets set ANTHROPIC_API_KEY=sk-ant-...   # or export it locally
 - Model defaults to `claude-opus-5` (override with `ANTHROPIC_MODEL`).
   Server-side refusal fallback is enabled, so a safety-classifier decline
   re-runs on Anthropic's recommended substitute model automatically.
-- One API call per run on a ~1 KB preview — cost is a fraction of a cent;
-  detection failures (rate limit, network) never fail the run.
+- At most one API call per run, on a ~1 KB preview — roughly 1–4 cents at
+  `claude-opus-5` rates ($5 / $25 per million input / output tokens).
+  Sheets served from column memory cost nothing, so a recurring layout is
+  free after its first approved run, and detection failures (rate limit,
+  network) never fail the run. Set `ANTHROPIC_MODEL=claude-sonnet-5` (or
+  `claude-haiku-4-5`) to trade some accuracy on unusual layouts for a
+  lower per-call cost.
 
 ## Accounts & login
 
